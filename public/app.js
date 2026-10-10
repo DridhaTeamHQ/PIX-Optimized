@@ -382,6 +382,15 @@ const state = {
   // being cut from one. Unlike storedVideoUrl it does not move when Save
   // uploads a new encode — see videoClipKey().
   clipSourceUrl: "",
+  // The same trimmed clip with NO caption, logo or scrim — the copy every
+  // later preview and re-encode is cut from. storedVideoUrl has the caption
+  // burned in, so cutting from it and overlaying the caption again printed
+  // the headline twice, a few pixels apart.
+  cleanVideoUrl: null,
+  // True when clipSourceUrl is a branded copy (a post saved before
+  // cleanVideoUrl existed). Its caption is already in the pixels, so the
+  // preview and the encoder must not add another.
+  clipSourceBranded: false,
   // The last MP4 the server rendered, kept so Export then Save does not
   // encode the same range twice.
   renderedClip: null,
@@ -3254,6 +3263,7 @@ const VIDEO_PAGE_FIELDS  = [
   "videoFileName",
   "trimStart", "trimEnd", "videoMuted", "videoFocus", "videoCaption", "videoCaptionSize",
   "storedVideoUrl", "storedVideoFor", "clipSourceUrl", "renderedClip",
+  "cleanVideoUrl", "clipSourceBranded",
 ];
 
 // The spine is poster + text. Video is not part of it, so the base page
@@ -3641,6 +3651,8 @@ function blankPageContent(type) {
     storedVideoFor: null,
     clipSourceUrl: "",
     renderedClip: null,
+    cleanVideoUrl: null,
+    clipSourceBranded: false,
     videoCaption: "",
     videoCaptionSize: state.videoCaptionSize,
   };
@@ -3772,6 +3784,7 @@ function serializePages() {
         // so it is the one piece of media a page does carry across.
         storedUrl: c.storedVideoUrl || null,
         storedFor: c.storedVideoFor || null,
+        cleanUrl: c.cleanVideoUrl || null,
         sourceKind: c.videoSourceKind || "link",
         trimStart: c.trimStart ?? 0,
         trimEnd: c.trimEnd ?? 0,
@@ -3864,10 +3877,15 @@ function restorePages(list, spine) {
     if (entry.type === "video") {
       content.videoUrl = entry.video?.url || "";
       content.storedVideoUrl = entry.video?.storedUrl || null;
+      content.cleanVideoUrl = entry.video?.cleanUrl || null;
       /* Seed the player source too, so the card can paint without waiting to
-         be selected and adoptPageVideo has something to load. */
-      content.videoSrc = entry.video?.storedUrl || "";
-      content.clipSourceUrl = entry.video?.storedUrl || "";
+         be selected and adoptPageVideo has something to load. The clean copy
+         when there is one: the branded copy already carries the caption the
+         preview is about to draw. */
+      const playable = entry.video?.cleanUrl || entry.video?.storedUrl || "";
+      content.videoSrc = playable;
+      content.clipSourceUrl = playable;
+      content.clipSourceBranded = Boolean(playable) && !entry.video?.cleanUrl;
       content.storedVideoFor = entry.video?.storedFor || null;
       content.videoSourceKind = entry.video?.sourceKind || "link";
       content.trimStart = numberOr(entry.video?.trimStart, 0);
@@ -4460,6 +4478,28 @@ function drawPixVideoScreen() {
     }
   }
 
+  /* A branded source (a post saved before the clean copy was kept) already
+     has the scrims, logo, caption and date in its pixels. Painting them again
+     is what showed the headline twice, offset by however far the layout had
+     moved since that encode. The export path never paints over it either —
+     see renderClipPair. */
+  const brandedSource = !overlayOnly && state.clipSourceBranded;
+
+  if (!brandedSource) drawVideoBranding(W, H, L);
+
+  // Mockup chrome is preview-only — it must never reach the exported file.
+  if (!overlayOnly && !state.isDownloading && getLayout().showPreviewBars) {
+    drawEngagementBar();
+    drawPixPageDots(0.5 * W, 1558 * (H / 1700), s);
+    drawNavBar();
+  }
+
+  ctx.restore();
+}
+
+/* Everything ffmpeg burns over the footage: the scrims, the logo and the
+   caption. Drawn for the preview and for the overlay PNG alike. */
+function drawVideoBranding(W, H, L) {
   // Bottom scrim so the logo and any platform UI stay legible over bright
   // footage. Lighter than the poster's gradient — the video is the subject
   // here, not a backdrop for a headline.
@@ -4481,15 +4521,6 @@ function drawPixVideoScreen() {
 
   drawFixedLogos();
   drawVideoCaption();
-
-  // Mockup chrome is preview-only — it must never reach the exported file.
-  if (!overlayOnly && !state.isDownloading && getLayout().showPreviewBars) {
-    drawEngagementBar();
-    drawPixPageDots(0.5 * W, 1558 * (H / 1700), s);
-    drawNavBar();
-  }
-
-  ctx.restore();
 }
 
 /**
@@ -10729,6 +10760,8 @@ function loadLocalVideoFile(file) {
   state.storedVideoUrl = null;
   state.storedVideoFor = null;
   state.clipSourceUrl = "";
+  state.cleanVideoUrl = null;
+  state.clipSourceBranded = false;
   state.renderedClip = null;
   if (videoFileLabel) videoFileLabel.textContent = file.name;
 
@@ -10976,23 +11009,32 @@ if (videoFileDrop) {
  * limit, while the clip is the part that was actually chosen — and it is what
  * gets published.
  */
-async function renderTrimmedClip({ width, height, onStatus = () => {} } = {}) {
+/* `branded: false` cuts the clip with nothing drawn over it. `fromBlob`
+   encodes an already-cut clip instead of the post's source — used to brand
+   the clean copy, so the big source is only uploaded and decoded once. */
+async function renderTrimmedClip({ width, height, onStatus = () => {}, branded = true, fromBlob = null } = {}) {
   const size = (width && height) ? { width, height } : videoTargetSize();
-  const duration = state.trimEnd - state.trimStart;
-  const overlay = await renderVideoOverlayPng(size.width, size.height);
+  const start = fromBlob ? 0 : state.trimStart;
+  const end = fromBlob ? state.trimEnd - state.trimStart : state.trimEnd;
+  const duration = end - start;
+  const overlay = branded ? await renderVideoOverlayPng(size.width, size.height) : null;
 
   const form = new FormData();
-  form.append("start", String(state.trimStart));
-  form.append("end", String(state.trimEnd));
+  form.append("start", String(start));
+  form.append("end", String(end));
   form.append("width", String(size.width));
   form.append("height", String(size.height));
   form.append("mute", state.videoMuted ? "true" : "false");
   // ffmpeg must crop the same slice the preview showed, or the exported clip
-  // is framed differently from what was approved on screen.
-  form.append("focusX", String(state.videoFocus?.x ?? 0.5));
-  form.append("focusY", String(state.videoFocus?.y ?? 0.5));
+  // is framed differently from what was approved on screen. A clip that is
+  // already cut is already this size, so its crop is a no-op.
+  form.append("focusX", String(fromBlob ? 0.5 : (state.videoFocus?.x ?? 0.5)));
+  form.append("focusY", String(fromBlob ? 0.5 : (state.videoFocus?.y ?? 0.5)));
   if (overlay) form.append("overlay", overlay, "overlay.png");
-  if (state.videoFile) {
+  if (fromBlob) {
+    form.append("video", fromBlob, "clean.mp4");
+    onStatus(`Adding the caption to ${duration.toFixed(1)}s…`);
+  } else if (state.videoFile) {
     form.append("video", state.videoFile, state.videoFile.name);
     onStatus(`Uploading and encoding ${duration.toFixed(1)}s… this can take a few minutes.`);
   } else {
@@ -11025,6 +11067,27 @@ async function renderTrimmedClip({ width, height, onStatus = () => {} } = {}) {
   return blob;
 }
 
+/* The clip as it publishes (`blob`) and the same cut with nothing over it
+   (`cleanBlob`).
+
+   Only the branded copy used to be kept, and it was also what a reopened post
+   played and re-encoded from — so every later encode drew the caption over a
+   clip that already had one, and the published video carried the headline
+   twice. The clean copy is what gets reopened now.
+
+   A branded source (saved before this existed) has no clean footage to go
+   back to. It is re-cut as it is, with no second overlay, and keeps the
+   caption it was saved with. */
+async function renderClipPair({ width, height, onStatus = () => {} } = {}) {
+  if (state.clipSourceBranded) {
+    const blob = await renderTrimmedClip({ width, height, onStatus, branded: false });
+    return { blob, cleanBlob: null };
+  }
+  const cleanBlob = await renderTrimmedClip({ width, height, onStatus, branded: false });
+  const blob = await renderTrimmedClip({ width, height, onStatus, fromBlob: cleanBlob });
+  return { blob, cleanBlob };
+}
+
 async function exportVideoClip() {
   if (state.videoExporting) return;
   const duration = state.trimEnd - state.trimStart;
@@ -11048,7 +11111,7 @@ async function exportVideoClip() {
        key before the await; this is the same discipline. */
     const clipKey = videoClipKey();
     const clipOwner = activePage();
-    const blob = await renderTrimmedClip({ width, height, onStatus: setVideoStatus });
+    const { blob, cleanBlob } = await renderClipPair({ width, height, onStatus: setVideoStatus });
 
     const title = (state.videoMeta && state.videoMeta.title) || state.headline || "pix-clip";
     const link = document.createElement("a");
@@ -11065,7 +11128,7 @@ async function exportVideoClip() {
        clip without re-rendering it — filed against the page it was rendered
        for, so navigating away mid-export neither loses it nor hands it to a
        different video slide. */
-    commitFieldToPage(clipOwner, "renderedClip", { blob, key: clipKey });
+    commitFieldToPage(clipOwner, "renderedClip", { blob, cleanBlob, key: clipKey });
   } catch (err) {
     // A dropped connection surfaces as a bare "Failed to fetch", which tells
     // the user nothing — name the likely cause.
@@ -11817,8 +11880,8 @@ async function resolvePublishClipFromState(onStatus = () => {}) {
   if (!videoReady) return null;
 
   onStatus("Rendering the video — this can take a few minutes…");
-  const blob = await renderTrimmedClip({ onStatus });
-  if (blob) state.renderedClip = { blob, key: clipKey };
+  const { blob, cleanBlob } = await renderClipPair({ onStatus });
+  if (blob) state.renderedClip = { blob, cleanBlob, key: clipKey };
   return blob;
 }
 
@@ -12909,6 +12972,8 @@ function startNewPix() {
   state.storedVideoFor = null;
   state.storedVideoUrl = null;
   state.clipSourceUrl = "";
+  state.cleanVideoUrl = null;
+  state.clipSourceBranded = false;
   state.renderedClip = null;
   state.headlineTouched = false;
   state.detailTouched = false;
@@ -13267,6 +13332,9 @@ function collectDesignSnapshot(view) {
         // and with the caption burned in. `url` above is the original link,
         // which for a scraped clip is a signed URL that expires within hours.
         storedUrl: v.storedVideoUrl || null,
+        // The same cut with no caption burned in — what a reopened post plays
+        // and re-encodes from. See renderClipPair.
+        cleanUrl: v.cleanVideoUrl || null,
         // The key that copy was rendered under. Reopening compares its tail
         // with the caption and framing below before trusting the copy.
         storedFor: v.storedVideoFor || null,
@@ -15818,11 +15886,13 @@ async function ensureMediaUploaded(onProgress = () => {}) {
       return;
     }
     try {
-      let blob = state.renderedClip?.key === clipKey ? state.renderedClip.blob : null;
+      const cached = state.renderedClip?.key === clipKey ? state.renderedClip : null;
+      let blob = cached?.blob || null;
+      let cleanBlob = cached?.cleanBlob || null;
       if (!blob) {
         onProgress("Rendering clip…");
-        blob = await renderTrimmedClip({ onStatus: (m) => onProgress(m) });
-        state.renderedClip = { blob, key: clipKey };
+        ({ blob, cleanBlob } = await renderClipPair({ onStatus: (m) => onProgress(m) }));
+        state.renderedClip = { blob, cleanBlob, key: clipKey };
       }
       /* One retry. The measured failure is a large clip whose bytes reach
          Storage while the client never gets a usable response back — the
@@ -15852,6 +15922,22 @@ async function ensureMediaUploaded(onProgress = () => {}) {
       }
       state.storedVideoFor = clipKey;
       state.storedVideoUrl = url;
+
+      /* The caption-free copy a reopened post plays and re-cuts from. Not
+         fatal: without it the post still publishes correctly, it just reopens
+         with its caption locked into the footage. Cleared first so a failed
+         upload cannot leave the previous cut's clean copy paired with this
+         one. */
+      state.cleanVideoUrl = null;
+      if (cleanBlob) {
+        try {
+          onProgress("Uploading clean video…");
+          const cleanUrl = await uploadMediaBlob(cleanBlob, "slide2-clean.mp4");
+          if (typeof cleanUrl === "string" && cleanUrl) state.cleanVideoUrl = cleanUrl;
+        } catch (err) {
+          console.warn("[pix] clean clip not stored:", err);
+        }
+      }
     } catch (err) {
       /* Logged in full as well as reported: the message reaching the user is
          one line, but diagnosing an encode failure needs the whole thing. */
@@ -15939,7 +16025,12 @@ function openVideoPanelForReview() {
   const length = state.trimEnd > state.trimStart
     ? ` · ${formatTimecode(state.trimEnd - state.trimStart)}`
     : "";
-  setVideoStatus(`Video from ${label}${length}. Play it below, re-trim it, or replace it by uploading a file.`, "success");
+  // A clip saved before the clean copy was kept has its caption in the
+  // footage itself; editing the caption field cannot change it.
+  const locked = state.clipSourceBranded
+    ? " Its caption is burned into this saved copy, so caption edits won't apply — upload the video again to change it."
+    : "";
+  setVideoStatus(`Video from ${label}${length}. Play it below, re-trim it, or replace it by uploading a file.${locked}`, "success");
 }
 
 function restoreStoredVideo(video) {
@@ -15950,9 +16041,17 @@ function restoreStoredVideo(video) {
      always carried it; design.video does from now on. */
   const renderedFor = video.storedFor || null;
 
+  /* Play and cut from the caption-free copy when the post has one. The
+     branded copy already carries the caption, so playing it under the live
+     caption — and re-encoding from it — printed the headline twice. */
+  const cleanUrl = video.cleanUrl || null;
+  const playable = cleanUrl || url;
+
   state.videoUrl = video.url || "";
   state.storedVideoUrl = url;
-  state.clipSourceUrl = url;
+  state.cleanVideoUrl = cleanUrl;
+  state.clipSourceUrl = playable;
+  state.clipSourceBranded = !cleanUrl;
   state.videoFile = null;
   state.videoSourceKind = video.sourceKind || "file";
   state.videoFileName = video.fileName || video.title || "";
@@ -15966,7 +16065,7 @@ function restoreStoredVideo(video) {
 
   videoPreviewEl.poster = "";
   videoPreviewEl.crossOrigin = "anonymous";
-  videoPreviewEl.src = url;
+  videoPreviewEl.src = playable;
   videoPreviewEl.addEventListener("loadedmetadata", () => {
     const duration = videoPreviewEl.duration || 0;
     setupTrimRange(duration);
@@ -16066,7 +16165,7 @@ function restoreStoredVideo(video) {
        from an earlier restore must not report on a clip that has since been
        swapped out — the message would name a problem the writer cannot see. */
     const loaded = videoPreviewEl.currentSrc || videoPreviewEl.getAttribute("src") || "";
-    if (loaded !== url) return;
+    if (loaded !== playable) return;
     setVideoStatus(
       "The stored clip could not be loaded — it may have been removed from storage. Re-add the video before publishing.",
       "error",
