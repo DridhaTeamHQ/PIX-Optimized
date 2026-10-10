@@ -1,0 +1,1511 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>PIXIE</title>
+  <meta name="description" content="Paste a news article URL, scrape the headline and image, then edit and download a beautiful 9:16 poster." />
+
+  <!-- Mobile browser chrome / iOS home-screen behavior -->
+  <meta name="theme-color" content="#f5f7fb" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="PIXIE" />
+
+  <!-- Theme bootstrap — runs before CSS paints to avoid a light/dark flash.
+       Light is the default; the navbar toggle persists the choice. -->
+  <script>
+    (function () {
+      var t = localStorage.getItem("pix-theme") || "light";
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+
+  <link rel="icon" type="image/png" href="./assests/pix-logo.png?v=20260824" />
+
+  <link rel="stylesheet" href="./styles.css" />
+  <!-- Visual revamp. Loaded second so it can redefine the design tokens
+       styles.css already reads; see the header comment in the file. -->
+  <link rel="stylesheet" href="./revamp.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=Roboto+Serif:opsz,wght@8..144,400;8..144,500;8..144,600;8..144,700;8..144,800&display=swap" rel="stylesheet">
+</head>
+<body class="auth-checking">
+
+  <!-- Ambient aurora backdrop (pure CSS, GPU-composited) -->
+  <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <!-- Inline SVG sprite — shared icons (chevron, nav, upload, export) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-chevron" viewBox="0 0 14 14">
+      <path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </symbol>
+    <symbol id="i-image" viewBox="0 0 16 16">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/>
+      <circle cx="5.5" cy="6.5" r="1.4" fill="currentColor"/>
+      <path d="M2.5 12l3.2-3.2a1 1 0 0 1 1.4 0l1.6 1.6 2.1-2.1a1 1 0 0 1 1.4 0l2.3 2.3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-doc" viewBox="0 0 16 16">
+      <path d="M4 1.5h5.5L13 5v9a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 14V3A1.5 1.5 0 0 1 4 1.5z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+      <path d="M5.5 8h5M5.5 10.5h5M5.5 5.5h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-download" viewBox="0 0 16 16">
+      <path d="M8 2v8m0 0l3-3m-3 3L5 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M2.5 11.5v1A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+    </symbol>
+    <symbol id="i-upload" viewBox="0 0 16 16">
+      <path d="M8 11V3m0 0L5 6m3-3l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M2.5 11.5v1A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+    </symbol>
+    <symbol id="i-bolt" viewBox="0 0 16 16">
+      <path d="M8.8 1.5L3.5 9h3.4l-.7 5.5L11.5 7H8.1l.7-5.5z" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-spark" viewBox="0 0 16 16">
+      <path d="M8 1.5l1.4 3.9 3.9 1.4-3.9 1.4L8 12.1 6.6 8.2 2.7 6.8l3.9-1.4L8 1.5z" fill="currentColor"/>
+      <path d="M12.8 10.6l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7.7-1.9z" fill="currentColor" opacity="0.7"/>
+    </symbol>
+    <symbol id="i-save" viewBox="0 0 16 16">
+      <path d="M2.5 2.5h8.2L13.5 5.3v8.2a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1Z"
+            fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M5 2.5v4h5v-4M4.5 14.5v-4h7v4" fill="none" stroke="currentColor"
+            stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-undo" viewBox="0 0 16 16">
+      <path d="M3 6.5h6.2a3.8 3.8 0 1 1 0 7.6H6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+      <path d="M5.6 3.4L2.5 6.5l3.1 3.1" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 16 16">
+      <path d="M3 8.6l3.2 3.2L13 5" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-moon" viewBox="0 0 16 16">
+      <path d="M13.5 9.8A6 6 0 0 1 6.2 2.5a6 6 0 1 0 7.3 7.3z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-sun" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/>
+      <path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1m11.95-4.95l-1.13 1.13M4.18 11.82l-1.13 1.13m11.9 0l-1.13-1.13M4.18 4.18L3.05 3.05" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+  </svg>
+
+  <!-- Sticky top navbar -->
+  <!-- ═══ CMS shell ═══════════════════════════════════════════════════════
+       Sidebar + topbar + action bar. The view switcher keeps its id and its
+       .view-tab[data-view] buttons exactly as they were — app.js delegates
+       clicks from #view-tabs, so moving the block from a top rail into a
+       sidebar changes where it sits and nothing about how it behaves. -->
+  <div class="cms-layout">
+
+    <aside class="cms-sidebar">
+      <div class="cms-brand">
+        <img class="nav-logo-mark" src="./assests/pix-logo.png?v=20260824" alt="" />
+        <span class="cms-brand-text">PIXIE</span>
+      </div>
+
+      <!-- Collapse the rail to icons. Sits on the sidebar's own edge rather
+           than in the topbar, because that is where the thing it moves is —
+           and it stays visible when collapsed, so the way back is the same
+           control as the way in. -->
+      <button type="button" id="nav-collapse" class="cms-nav-collapse"
+              aria-label="Collapse the navigation" aria-expanded="true">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2"
+                fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <div class="view-tabs" id="view-tabs" role="tablist" aria-label="View">
+        <button type="button" class="view-tab active" data-view="poster" role="tab" aria-selected="true">
+          <svg width="17" height="17" aria-hidden="true"><use href="#i-image"/></svg>
+          <span>Create Pix</span>
+        </button>
+                <!-- One page, two readings: QA reviews everyone's posts, a writer sees
+             their own. The server scopes the list by role; the label just says
+             which of the two you are looking at. -->
+        <button type="button" class="view-tab" data-view="review" role="tab" aria-selected="false">
+          <svg width="17" height="17" aria-hidden="true"><use href="#i-check"/></svg>
+          <span id="review-tab-label">Review</span>
+        </button>
+        <!-- Analytics reports on the whole team's throughput — QA and admin. -->
+        <button type="button" class="view-tab qa-only" data-view="analytics" role="tab" aria-selected="false">
+          <svg width="17" height="17" aria-hidden="true"><use href="#i-doc"/></svg>
+          <span>Analytics</span>
+        </button>
+        <!-- The roster is the admin's: reporting about colleagues, not a tool. -->
+        <button type="button" class="view-tab admin-only" data-view="writers" role="tab" aria-selected="false">
+          <svg width="17" height="17" aria-hidden="true"><use href="#i-check"/></svg>
+          <span>Writers</span>
+        </button>
+      </div>
+
+      <div class="cms-sidebar-foot">
+        <button type="button" id="theme-toggle" class="cms-side-link" aria-label="Switch theme">
+          <svg class="icon-sun" width="16" height="16" aria-hidden="true"><use href="#i-sun"/></svg>
+          <svg class="icon-moon" width="16" height="16" aria-hidden="true"><use href="#i-moon"/></svg>
+          <span>Theme</span>
+        </button>
+        <span class="cms-side-badge">Beta</span>
+      </div>
+    </aside>
+
+    <div class="cms-main">
+
+      <header class="cms-topbar">
+        <div class="cms-topbar-title">
+          <h2 id="cms-page-title">Create a Pix</h2>
+          <nav class="cms-crumbs" aria-label="Breadcrumb">
+            <span>Dashboard</span>
+            <span class="cms-crumb-sep" aria-hidden="true">&rsaquo;</span>
+            <span id="cms-crumb-current">Create Pix</span>
+          </nav>
+        </div>
+        <div class="cms-topbar-right">
+          <!-- Post actions, in the header. They were in a sticky footer, which
+               put the one irreversible control in the app at the far bottom of
+               a page you have to scroll — and left it hanging under views like
+               My posts where there is no open post for it to act on. Up here
+               they sit beside the post's own title, always in view, and are
+               hidden outright on any view that is not the editor.
+               Each still proxies the original control, so the handlers,
+               guards and disabled states are unchanged. -->
+          <div class="cms-topbar-actions" id="cms-topbar-actions">
+            <span class="cms-autosave" id="cms-autosave" hidden>
+              <svg width="14" height="14" aria-hidden="true"><use href="#i-check"/></svg>
+              <span id="cms-autosave-text">Saved</span>
+            </span>
+            <button type="button" class="btn-ghost" data-proxy="new-pix-btn">New post</button>
+            <button type="button" class="btn-ghost qa-only" data-proxy="reject-pix-btn" hidden>Reject</button>
+            <button type="button" class="btn-ghost" data-proxy="save-pix-btn" data-intent="draft">Save draft</button>
+            <button type="button" class="btn-primary" data-proxy="dailymattr-publish-btn">Publish</button>
+          </div>
+          <span class="cms-date" id="cms-today"></span>
+          <div class="nav-account" id="account-box" hidden>
+            <span class="nav-account-name" id="account-name">&mdash;</span>
+            <!-- Your own tally, for every role. Analytics is QA-and-admin
+                 because it reports on colleagues, which left a writer with no
+                 way to see their own output. -->
+            <span class="nav-count" id="account-count" hidden title="Your work this week"></span>
+            <span class="role-badge" id="account-role">writer</span>
+          </div>
+          <button type="button" id="logout-btn" class="nav-logout" hidden>Logout</button>
+        </div>
+      </header>
+
+      <div class="cms-body">
+
+  <!-- Login. Covers the whole app until a session resolves, so nothing of the
+       editor is reachable — or even visible — while signed out. -->
+  <section id="auth-gate" class="agent-auth-gate" aria-live="polite">
+    <div class="agent-auth-card">
+      <span class="agent-auth-kicker"><img class="agent-auth-logo" src="./assests/pix-logo.png?v=20260824" alt="" />PIXIE</span>
+      <h1>Sign in</h1>
+      <p id="auth-message">Checking your session…</p>
+
+      <form id="login-form" class="login-form" hidden autocomplete="on">
+        <label class="login-field">
+          <span>Username</span>
+          <input type="text" id="login-username" name="username" autocomplete="username"
+                 autocapitalize="none" spellcheck="false" required />
+        </label>
+        <label class="login-field">
+          <span>Password</span>
+          <input type="password" id="login-password" name="password"
+                 autocomplete="current-password" required />
+        </label>
+        <button type="submit" class="btn-primary" id="login-submit">Sign in</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Mobile-only floating "edit" button — tap to pop up the controls sheet.
+       Hidden on desktop (CSS); opening sets body.sheet-open. -->
+  <button type="button" id="fab-edit" class="fab" aria-label="Edit poster" aria-expanded="false" aria-controls="edit-sheet">
+    <svg class="fab-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path d="M4 6h10M4 12h16M4 18h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="17" cy="6"  r="2.6" fill="currentColor"/>
+      <circle cx="7"  cy="12" r="2.6" fill="currentColor"/>
+      <circle cx="14" cy="18" r="2.6" fill="currentColor"/>
+    </svg>
+  </button>
+
+  <!-- Backdrop behind the bottom sheet (mobile). Tap to close. -->
+  <div id="sheet-backdrop" class="sheet-backdrop" aria-hidden="true"></div>
+
+  <main class="app-shell" id="app">
+
+    <!-- ═══ Edit sheet — wraps both editor panels.
+         Desktop:  display: contents  → children flow as grid items (3-col).
+         Mobile:   transforms into a fixed bottom-sheet that slides up. ═══ -->
+    <div class="edit-sheet" id="edit-sheet">
+
+      <!-- Sheet header (mobile only) — drag handle + title + close -->
+      <div class="sheet-handle">
+        <span class="sheet-handle-pill"></span>
+        <span class="sheet-title">Edit Poster</span>
+        <button type="button" id="sheet-close" class="sheet-close" aria-label="Close">
+          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false">
+            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+    <!-- ═══ COL 1: Text & Style controls ═══ -->
+    <section class="glass-panel controls-panel">
+
+      <header class="panel-copy">
+        <h1>Create your poster.</h1>
+        <p class="desc">Scrape an article or write your own headline.</p>
+      </header>
+
+      <!-- Mode Tabs -->
+      <div class="mode-tabs" id="mode-tabs" role="tablist">
+        <button type="button" class="mode-tab active" data-mode="link" role="tab" aria-selected="true">🔗 Paste Link</button>
+        <button type="button" class="mode-tab" data-mode="write" role="tab" aria-selected="false">✏️ Write Text</button>
+      </div>
+
+      <!-- Mode: Paste Link -->
+      <form class="form-group" id="scrape-form">
+        <label class="field">
+          <span class="field-label">Article URL</span>
+          <input id="scrape-url" type="url" placeholder="https://example.com/article" required />
+        </label>
+        <button type="submit" class="btn-primary" id="scrape-btn">
+          <svg width="14" height="14" aria-hidden="true"><use href="#i-bolt"/></svg>
+          Scrape &amp; Build
+        </button>
+        <p id="scrape-status" class="status-text" role="status" aria-live="polite">Ready — paste a URL and hit scrape.</p>
+      </form>
+
+      <!-- Mode: Write Text -->
+      <div class="form-group" id="write-form" hidden>
+        <label class="field">
+          <span class="field-label">Headline</span>
+          <textarea id="write-headline" rows="4" placeholder="Type your headline..."></textarea>
+          <small class="helper-text">Wrap words in [brackets] or (parens) for the first accent colour, or {braces} for the second.</small>
+        </label>
+        <label class="field">
+          <span class="field-label">Text Paragraph</span>
+          <textarea id="write-detail" rows="10" placeholder="Write the paragraph for the Text preview..."></textarea>
+          <small class="helper-text">Used only in the Text preview.</small>
+        </label>
+        <button type="button" class="btn-primary" id="write-apply-btn">
+          <svg width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
+          Build Poster
+        </button>
+        <p id="write-status" class="status-text" role="status" aria-live="polite"></p>
+      </div>
+
+      <!-- ═══ Edit accordions (revealed after build) ═══ -->
+      <div id="edit-panel" class="edit-panel acc-list" hidden>
+
+        <!-- Which page these controls are writing to. Without this the same
+             fields silently point somewhere else after a card is clicked,
+             which is the one way a multi-page editor gets confusing. -->
+        <div class="page-context" id="page-context" hidden>
+          <div class="page-context-main">
+            <span class="page-context-kicker">Editing</span>
+            <strong class="page-context-name" id="page-context-name">Page 1 · Poster</strong>
+          </div>
+          <button type="button" class="btn-ghost btn-tiny" id="page-context-back">Edit main post</button>
+        </div>
+
+        <!-- Source Link, first in the panel.
+
+             It was below the Text Paragraph, which put the one field QA checks
+             on every post behind a ten-row textarea. It is also the field a
+             scrape fills in, so seeing it at the top is how a writer confirms
+             the right article was pulled. Kept in the shared editor rather than
+             the Write Text panel so both flows reach it. -->
+        <div class="acc" data-open="true">
+          <button type="button" class="acc-head" aria-expanded="true">
+            <span class="acc-title">Source Link <span class="required-mark" aria-hidden="true">*</span></span>
+            <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="acc-body"><div class="acc-inner">
+            <input type="url" id="source-url-edit" placeholder="https://example.com/article" />
+            <small class="helper-text">Required. Where the story came from — filled automatically when you scrape a link.</small>
+          </div></div>
+        </div>
+
+        <!-- Aspect Ratio -->
+        <div class="acc" data-open="true">
+          <button type="button" class="acc-head" aria-expanded="true">
+            <span class="acc-title">Aspect Ratio</span>
+            <span class="acc-meta" id="acc-meta-ratio">9:16</span>
+            <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="acc-body"><div class="acc-inner">
+            <div class="ratio-grid" id="ratio-presets" role="radiogroup" aria-label="Aspect ratio">
+              <button type="button" class="ratio-btn active" data-ratio="9:16" role="radio" aria-checked="true">
+                <span class="ratio-icon" data-shape="9-16"></span>
+                <span class="ratio-label">9:16</span>
+                <span class="ratio-sub">Story</span>
+              </button>
+              <button type="button" class="ratio-btn" data-ratio="4:5" role="radio" aria-checked="false">
+                <span class="ratio-icon" data-shape="4-5"></span>
+                <span class="ratio-label">4:5</span>
+                <span class="ratio-sub">Feed</span>
+              </button>
+              <button type="button" class="ratio-btn" data-ratio="1:1" role="radio" aria-checked="false">
+                <span class="ratio-icon" data-shape="1-1"></span>
+                <span class="ratio-label">1:1</span>
+                <span class="ratio-sub">Square</span>
+              </button>
+              <button type="button" class="ratio-btn" data-ratio="16:9" role="radio" aria-checked="false">
+                <span class="ratio-icon" data-shape="16-9"></span>
+                <span class="ratio-label">16:9</span>
+                <span class="ratio-sub">Wide</span>
+              </button>
+            </div>
+          </div></div>
+        </div>
+
+        <!-- Headline & Tag (combined) -->
+        
+
+        <!-- Video — a trimmed, branded clip on its own page. Source is a
+             YouTube/Instagram link or a local file. Only reachable while a
+             Video page is selected, because the clip belongs to that page. -->
+        
+
+        <!-- Style: font + accent color -->
+        <div class="acc" data-open="false">
+          <button type="button" class="acc-head" aria-expanded="false">
+            <span class="acc-title">Style</span>
+            <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="acc-body"><div class="acc-inner">
+            <h3 class="acc-subtitle">Font Size</h3>
+            <label class="slider-container" style="margin-bottom:14px;">
+              <span class="slider-label">Size</span>
+              <input type="range" id="font-size" min="32" max="90" value="0" />
+            </label>
+            <h3 class="acc-subtitle">Accent Color</h3>
+            <label class="color-picker-wrap">
+              <div class="color-circle" style="border-color: #3979FF;">
+                <input type="color" id="accent-color" value="#3979FF" />
+              </div>
+              <span class="color-hex" id="accent-hex">#3979FF</span>
+              <span class="color-bracket-hint">[square]</span>
+            </label>
+            <label class="color-picker-wrap">
+              <div class="color-circle" style="border-color: #7A1726;">
+                <input type="color" id="accent-alt-color" value="#7A1726" />
+              </div>
+              <span class="color-hex" id="accent-alt-hex">#7A1726</span>
+              <span class="color-bracket-hint">{curly}</span>
+            </label>
+          </div></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ═══ COL 2: Image / Background controls ═══ -->
+    
+
+    </div><!-- /.edit-sheet -->
+
+    <!-- ═══ COL 3: Live Preview — every output at once ═══ -->
+    <section class="glass-panel preview-panel">
+      <div class="preview-header">
+        <span class="preview-title">Live Preview</span>
+        <!-- The carousel is a fixed spine (poster + slide 2) plus pages the
+             writer adds. The count is in the header because the cap is the
+             thing people bump into, and a number they can see beats an
+             "Add page" button that silently stops working. -->
+        <span class="page-count-chip" id="page-count-chip">2 of 5 pages</span>
+        <div class="preview-header-actions">
+          <!-- The only way a post reaches the database. Nothing is stored on
+               scrape, rewrite or download. -->
+          <button type="button" class="btn-ghost preview-save" id="save-pix-btn"
+                  title="Save this post to the library">
+            <svg width="13" height="13" aria-hidden="true"><use href="#i-save"/></svg>
+            <span id="save-pix-label">Save</span>
+          </button>
+          <!-- Rejecting from the editor, not just from the Review list. A
+               reviewer reads the post here — that is where the decision is
+               actually made, and going back to the list to act on it meant
+               finding the row again. Approve stays on the list: it is paired
+               with Approve & Publish there, and splitting that pair across two
+               screens is how the wrong one gets pressed. -->
+          <button type="button" class="btn-ghost preview-reject qa-only" id="reject-pix-btn" hidden
+                  title="Send this post back to the writer">
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.9"
+                    fill="none" stroke-linecap="round"/>
+            </svg>
+            <span id="reject-pix-label">Reject</span>
+          </button>
+          <!-- Clearing the editor for the next story. Editing a saved poster in
+               place keeps writing to the same row, so without this a writer who
+               types over their headline silently overwrites the post QA is
+               already reviewing. -->
+          <button type="button" class="btn-ghost preview-new" id="new-pix-btn"
+                  title="Clear the editor and start the next post">
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.9"
+                    fill="none" stroke-linecap="round"/>
+            </svg>
+            <span>New post</span>
+          </button>
+          <div class="rail-nav">
+            <button type="button" class="rail-arrow" id="rail-prev" aria-label="Previous slide">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.9"
+                      fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button type="button" class="rail-arrow" id="rail-next" aria-label="Next slide">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.9"
+                      fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+          <span class="preview-pixels" id="preview-pixels">920 × 1700</span>
+        </div>
+      </div>
+
+      <!-- Every export is a card with its own download, so no button ever has
+           to guess which slide the user meant — the bug that once made the X
+           export ship the Text image. -->
+      <div class="preview-rail" id="preview-rail">
+
+        <!-- The spine: a scrape always fills these, and they start as pages 1
+             and 2. They can be removed like any other page — a story that is
+             only a video, or only a poster, is a real thing to want. The base
+             PAGE survives either way, because it owns the post's headline,
+             image and paragraph; only its card leaves the rail. -->
+        <figure class="preview-card is-selected" data-preview-mode="pix" data-page="base">
+          <figcaption class="preview-card-label" title="Click to view full screen">
+            <button type="button" class="preview-card-grip" data-grip
+                    aria-label="Move this page — drag, or use the left and right arrow keys"
+                    title="Drag to reorder (or focus and press ← →)">⠿</button>
+            <span class="preview-card-num">1</span>
+            <span class="preview-card-type">Poster</span>
+            <button type="button" class="preview-card-remove" data-remove-card
+                    aria-label="Remove the poster page" title="Remove this page">&times;</button>
+          </figcaption>
+          <div class="canvas-container">
+            <canvas id="post-canvas" width="920" height="1700" aria-label="Page 1 — poster"></canvas>
+          </div>
+          <p class="preview-card-slice" hidden></p>
+          <div class="preview-card-actions">
+            <button type="button" class="btn-ghost preview-card-edit" data-edit-page>
+              <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M11.3 2.2l2.5 2.5L6 12.5 3 13l.5-3z" fill="none"
+                      stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              </svg> Edit
+            </button>
+            <button type="button" class="btn-ghost preview-card-dl" data-download="pix">
+              <svg width="12" height="12" aria-hidden="true"><use href="#i-download"/></svg> Download
+            </button>
+          </div>
+        </figure>
+
+        <figure class="preview-card is-selected" data-preview-mode="text" data-page="base">
+          <figcaption class="preview-card-label" title="Click to view full screen">
+            <button type="button" class="preview-card-grip" data-grip
+                    aria-label="Move this page — drag, or use the left and right arrow keys"
+                    title="Drag to reorder (or focus and press ← →)">⠿</button>
+            <span class="preview-card-num">2</span>
+            <span class="preview-card-type">Text</span>
+            <button type="button" class="preview-card-remove" data-remove-card
+                    aria-label="Remove the text page" title="Remove this page">&times;</button>
+          </figcaption>
+          <div class="canvas-container">
+            <canvas id="text-canvas" width="920" height="1700" aria-label="Page 2 — text card"></canvas>
+          </div>
+          <!-- Which of the paragraph's points this card carries, once there is
+               more than one text page to spread them over. -->
+          <p class="preview-card-slice" hidden></p>
+          <div class="preview-card-actions">
+            <button type="button" class="btn-ghost preview-card-edit" data-edit-page>
+              <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M11.3 2.2l2.5 2.5L6 12.5 3 13l.5-3z" fill="none"
+                      stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              </svg> Edit
+            </button>
+            <button type="button" class="btn-ghost preview-card-dl" data-download="text">
+              <svg width="12" height="12" aria-hidden="true"><use href="#i-download"/></svg> Download
+            </button>
+          </div>
+        </figure>
+
+        <!-- Added pages are injected here, immediately before the tile, so
+             the "+" always sits at the end of the run of pages — right
+             beside Text until something is added — and never after the X
+             export. -->
+
+        <div class="preview-add" id="preview-add">
+          <button type="button" class="preview-add-btn" id="preview-add-btn"
+                  aria-haspopup="true" aria-expanded="false" title="Add another page">
+            <span class="preview-add-plus" aria-hidden="true">+</span>
+            <span class="preview-add-label">Add page</span>
+            <span class="preview-add-hint" id="preview-add-hint">3 left</span>
+          </button>
+          <!-- Replaces the tile's face while open rather than floating over
+               it, so nothing shows through and nothing spills onto the next
+               card. -->
+          <div class="preview-add-menu" id="preview-add-menu" role="menu" hidden>
+            <button type="button" role="menuitem" data-add-page="poster">
+              <span class="add-menu-icon" aria-hidden="true">▦</span> Poster page
+            </button>
+            <button type="button" role="menuitem" data-add-page="story">
+              <span class="add-menu-icon" aria-hidden="true">▤</span> Story page
+            </button>
+            <button type="button" role="menuitem" data-add-page="text">
+              <span class="add-menu-icon" aria-hidden="true">≡</span> Text page
+            </button>
+            <button type="button" role="menuitem" data-add-page="video">
+              <span class="add-menu-icon" aria-hidden="true">▶</span> Video page
+            </button>
+            <button type="button" class="preview-add-cancel" data-add-cancel>Cancel</button>
+          </div>
+        </div>
+
+        <!-- Not a carousel page — an export variant of the poster (2x,
+             cropped, Shortly logo). It rides along free of the 5-page cap. -->
+        <figure class="preview-card preview-card-pinned" data-preview-mode="x">
+          <figcaption class="preview-card-label" title="Click to view full screen"><span class="preview-card-glyph">𝕏</span> For X</figcaption>
+          <div class="canvas-container">
+            <canvas id="x-canvas" width="920" height="1700" aria-label="Post image for X"></canvas>
+          </div>
+          <button type="button" class="btn-ghost preview-card-dl" data-download="x">
+            <svg width="13" height="13" aria-hidden="true"><use href="#i-download"/></svg> Download
+          </button>
+          <a class="btn-ghost preview-card-dl preview-card-x-link" href="https://x.com/intent/tweet" target="_blank" rel="noopener noreferrer" aria-label="Open X composer with post text, hashtags and follow line in a new tab" aria-describedby="x-share-hint" title="Open X with the post text, hashtags and follow line filled in; paste the copied image or attach the downloaded Pix">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg> Open X
+          </a>
+          <button type="button" class="btn-ghost preview-card-dl" id="x-copy-image-btn" aria-describedby="x-share-hint">Copy Pix image</button>
+          <p class="preview-card-hint" id="x-share-hint">Text, hashtags and the follow line fill in on X. Copy and paste the image there, or attach the download.</p>
+        </figure>
+
+      </div>
+
+      <p id="x-download-status" class="status-text preview-status" role="status" aria-live="polite"></p>
+
+      <!-- Reviewer-only: publishing is the last gate before content is live on
+           shortlyindia.com. Hidden by default so a writer never sees it even
+           for the moment before the session resolves. -->
+      
+  <section class="cms-media-strip">
+  <section class="glass-panel image-panel acc-list" id="image-panel" hidden>
+  
+        <h2 class="panel-title">Image</h2>
+  
+        <!-- Background image source -->
+        <div class="acc" data-open="true">
+          <button type="button" class="acc-head" aria-expanded="true">
+            <span class="acc-title">Custom Upload</span>
+            <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="acc-body"><div class="acc-inner">
+              <label class="upload-zone" id="bg-upload-zone" tabindex="0">
+              <svg class="upload-icon" width="18" height="18" aria-hidden="true"><use href="#i-upload"/></svg>
+              <span class="upload-text">Drag, drop, paste, or <em>browse</em></span>
+              <span class="upload-hint">PNG, JPG, or WebP up to 10 MB</span>
+              <input type="file" id="bg-image-upload" accept="image/*" />
+            </label>
+            <div class="upload-actions">
+              <button type="button" id="bg-paste-btn" class="btn-secondary upload-action-btn">Paste image</button>
+              <span class="upload-shortcut">Tip: copy an image, then press Ctrl+V or Cmd+V here.</span>
+            </div>
+  
+          </div></div>
+      </div>
+
+      <!-- AI Enhance, its own box.
+
+           It was inside "Background" with the upload target, which made that
+           one section twice the height of every other and forced the row out
+           of balance. They are also two different jobs: one brings a picture
+           in, the other reprocesses the picture already there. -->
+      <!-- qa-only: enhancing is a review step, not a writing one. A writer
+           keeps whatever picture the story came with; QA enhances the ones
+           that need it, on posts that are actually going out. That way the
+           paid gpt-image call is spent once per PUBLISHED image instead of
+           once per attempt on every draft. Server-side too — see
+           REVIEWER_ONLY_API_ROUTES in server.mjs. -->
+      <div class="acc qa-only" data-open="true">
+        <button type="button" class="acc-head" aria-expanded="true">
+          <span class="acc-title">AI Super Resolution</span>
+          <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+        </button>
+        <div class="acc-body"><div class="acc-inner">
+          <!-- One button, and a stage that decides what it does.
+
+               There are two jobs here. Restore keeps the framing and recovers
+               detail. Expand keeps the photograph and draws outward from it:
+               the rest of a subject the photographer cropped at the chest, the
+               rest of the room, enough margin that a landscape press photo can
+               sit on a 9:16 poster without the canvas cutting the story out of
+               it.
+
+               They were briefly two buttons, on the reasoning that nothing in
+               the pixels tells a picture that wants widening from one that
+               wants sharpening. That is true of a heuristic and false of a
+               model that looks at the photograph — and one has been reading
+               every photograph in stage 1 of this route all along, describing
+               it for the edit prompt. It was never asked which job it needed.
+               It is now, in the same call that was already being paid for, so
+               the judgement costs nothing and the reviewer presses once.
+
+               Auto never expands. The planner's verdict is still read, but an
+               "expand" answer now means Fit — the whole photograph shown
+               letterboxed, by arithmetic, with nothing generated past the
+               edges. Expand was returning the photograph as a framed print
+               inside a scene the model drew around it, and the fix for that
+               (a browser-composited frame plus an alpha mask that pins the
+               original) is real but is not something to hand a reviewer who
+               pressed one button. It is reachable from the Job selector
+               below, deliberately. See "auto never expands" in server.mjs. -->
+            <button type="button" id="ai-enhance-btn" class="btn-ai" disabled>
+              <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
+              Restore &amp; Upscale
+            </button>
+            <!-- The way back. AI Enhance overwrites the picture in place and
+                 costs money to run, so a reviewer who does not like what came
+                 back had, until this, only one option: re-open the post and
+                 lose every other edit made since. This restores the image the
+                 writer posted — and its zoom and pan, because an expand resets
+                 those and the right photograph in the wrong crop is not an
+                 undo. It stays disabled until there is actually something
+                 behind it; see imageUndo in app.js. -->
+            <button type="button" id="image-undo-btn" class="btn-ghost btn-undo-image"
+                    title="Put the image back exactly as the writer posted it" disabled>
+              <svg width="14" height="14" aria-hidden="true"><use href="#i-undo"/></svg>
+              Undo AI Enhance
+            </button>
+            <label class="field" style="margin-top:10px;">
+              <span class="field-label">Job</span>
+              <select id="enhance-mode">
+                <!-- Reframe is the default: one gpt-image-1.5 call at high
+                     quality redraws the whole scene at the poster's shape —
+                     what "upscale and reframe it to 9:16" gets from ChatGPT.
+                     It is a regeneration. Expand is the job that pins the
+                     photograph and composites a drawn margin around it. -->
+                <option value="reframe" selected>Reframe &amp; Upscale — redraw the whole scene at 9:16 (high quality)</option>
+                <option value="restore">Restore — redraw for detail at the same framing</option>
+                <option value="auto">Auto — same as Reframe &amp; Upscale</option>
+                <option value="expand">Expand — keep the photo pinned, draw the margin around it</option>
+              </select>
+            </label>
+            <label class="field" id="expand-amount-field" style="margin-top:10px;" hidden>
+              <span class="field-label">Pull back</span>
+              <select id="expand-amount">
+                <option value="slight">A little — about 25% more scene</option>
+                <option value="moderate" selected>Moderate — about 50% more scene</option>
+                <option value="wide">Wide — roughly twice the scene</option>
+              </select>
+            </label>
+            <label class="slider-container" style="margin-top:10px;">
+              <span class="slider-label">Strength</span>
+              <input type="range" id="enhance-strength" min="0" max="100" step="5" value="20" />
+            </label>
+            <small class="helper-text" id="enhance-strength-hint">20% — raise this only if the image still looks soft.</small>
+            <!-- Rewritten per job by syncEnhanceModeUI() in app.js; this is
+                 the Auto text, which is what the selector defaults to. -->
+            <small class="helper-text" id="enhance-mode-hint">One gpt-image-1.5 call at high quality redraws the whole scene at the poster's shape — the same as asking ChatGPT to "upscale and reframe it to 9:16". It is a regeneration: recognisably the same, not pixel-identical. About $0.33 a picture, measured; the status line says what each press cost.</small>
+            <p id="ai-enhance-status" class="status-text" role="status" aria-live="polite"></p>
+          </div></div>
+        </div>
+  
+        <!-- Adjustments -->
+        <div class="acc" data-open="false">
+          <button type="button" class="acc-head" aria-expanded="false">
+            <span class="acc-title">Adjustments</span>
+            <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="acc-body"><div class="acc-inner">
+            <!-- Zoom is a stepper, not a slider. Framing a face inside a
+                 920px poster slot is a nudge-and-look job, and a 10-300 range
+                 on a ~150px track moves about 2% per pixel — so the mouse
+                 overshoots and the writer hunts. The range input stays as the
+                 value carrier (syncControl, the page restore and the drag
+                 handler all read img-zoom.value) and is simply hidden. -->
+            <div class="slider-container zoom-stepper">
+              <span class="slider-label">Zoom</span>
+              <span class="zoom-controls">
+                <button type="button" class="zoom-step" id="img-zoom-out"
+                        aria-label="Zoom out" title="Zoom out">&minus;</button>
+                <!-- The readout doubles as the reset. A separate reset button
+                     needed ~28px this column does not have, and appearing only
+                     off-100% made the row jump width as you clicked. -->
+                <!-- Doubles as Fit: a landscape photograph on a 9:16 poster
+                     loses about 68% of itself to the crop, and sometimes the
+                     picture IS the story. Click to show all of it, letterboxed;
+                     click again to fill the frame. -->
+                <button type="button" class="zoom-readout" id="img-zoom-value"
+                        title="Fit the whole photo (click again to fill)"
+                        aria-label="Fit the whole photo, or fill the frame">100%</button>
+                <button type="button" class="zoom-step" id="img-zoom-in"
+                        aria-label="Zoom in" title="Zoom in">+</button>
+              </span>
+              <!-- Floor is 5, not 10: fitting a very wide panorama into a 9:16 frame
+                   needs under 10% and would otherwise still overflow. -->
+              <input type="range" id="img-zoom" min="5" max="300" value="100" hidden />
+            </div>
+            <label class="slider-container">
+              <span class="slider-label">Pan X</span>
+              <input type="range" id="img-offset-x" min="-900" max="900" value="0" />
+            </label>
+            <label class="slider-container">
+              <span class="slider-label">Pan Y</span>
+              <input type="range" id="img-offset-y" min="-900" max="900" value="0" />
+            </label>
+            <div id="story-opacity-control" hidden>
+              <label class="slider-container">
+                <span class="slider-label">Bottom opacity</span>
+                <input type="range" id="story-overlay-opacity" min="0" max="100" step="1" value="100"
+                       aria-describedby="story-opacity-hint" />
+              </label>
+              <small class="helper-text" id="story-opacity-hint">Adjusts only this Story page's bottom text gradient.</small>
+            </div>
+          </div></div>
+        </div>
+  
+        <!-- Filters -->
+        <div class="acc" data-open="false">
+          <button type="button" class="acc-head" aria-expanded="false">
+            <span class="acc-title">Filters</span>
+            <span class="acc-meta" id="acc-meta-filter">None</span>
+            <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="acc-body"><div class="acc-inner">
+            <div class="preset-grid" id="filter-presets" style="margin-bottom:14px;">
+              <button type="button" class="preset-btn active" data-filter="none">None</button>
+              <!-- Computed from the photograph rather than a fixed bundle, and
+                   free: it moves the brightness/contrast/saturation controls
+                   that already exist, with no API call behind it. -->
+              <button type="button" class="preset-btn" data-filter="auto" title="Read this photograph and set brightness, contrast and saturation to suit it. Free — no AI credits.">Auto</button>
+              <button type="button" class="preset-btn" data-filter="vivid">Vivid</button>
+              <button type="button" class="preset-btn" data-filter="bw">B&amp;W</button>
+              <button type="button" class="preset-btn" data-filter="warm">Warm</button>
+              <button type="button" class="preset-btn" data-filter="cool">Cool</button>
+              <button type="button" class="preset-btn" data-filter="faded">Faded</button>
+              <button type="button" class="preset-btn" data-filter="soft">Soft</button>
+            </div>
+            <label class="slider-container">
+              <span class="slider-label">Bright</span>
+              <input type="range" id="filter-brightness" min="0" max="200" value="100" />
+            </label>
+            <label class="slider-container">
+              <span class="slider-label">Contrast</span>
+              <input type="range" id="filter-contrast" min="0" max="200" value="100" />
+            </label>
+            <label class="slider-container">
+              <span class="slider-label">Saturate</span>
+              <input type="range" id="filter-saturation" min="0" max="200" value="100" />
+            </label>
+            <label class="slider-container" style="margin-bottom:14px;">
+              <span class="slider-label">Blur</span>
+              <input type="range" id="filter-blur" min="0" max="20" value="0" />
+            </label>
+            <button type="button" id="img-reset-btn" class="btn-secondary">↺ Reset Image &amp; Filters</button>
+          </div></div>
+        </div>
+  
+        <!-- Suggested images, last on purpose.
+  
+             These are a fallback, not a starting point: the writer's own upload
+             or the scraped article's picture is nearly always the right image,
+             and a grid of stock photos sitting directly under AI Enhance pushed
+             Adjustments off the panel and invited picking a generic photo over
+             the real one. It also keeps Adjustments where it belongs — directly
+             below the enhance control it adjusts the result of. -->
+        <div id="stock-images-section" class="acc" data-open="true" hidden>
+          <button type="button" class="acc-head" aria-expanded="true">
+            <span class="acc-title">Suggested Images</span>
+            <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="acc-body"><div class="acc-inner">
+            <div id="stock-images-grid" class="stock-grid"></div>
+          </div></div>
+        </div>
+  
+      </section>
+  </section>
+    </section>
+
+    <!-- Compose: what the story is filed as and the copy that ships with it.
+         Its own column now rather than a block hanging off the bottom of the
+         preview, so the three cards read as Source / Preview / Compose — the
+         order the work actually happens in. -->
+    <section class="glass-panel compose-panel">
+      <!-- Writer-owned fields. QA sees these too, plus the publish form
+           below; a writer sees only these, which is what stops this column
+           being blank for them. -->
+      <div class="compose-fields acc-list">
+<div class="acc" data-open="true">
+          <button type="button" class="acc-head" aria-expanded="true">
+            <span class="acc-title">Headline &amp; Tag</span>
+            <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="acc-body"><div class="acc-inner">
+            <textarea id="headline-edit" rows="4" placeholder="Edit your headline..."></textarea>
+            <small class="helper-text">Wrap words in [brackets] or (parens) for the first accent colour, or {braces} for the second.</small>
+            <h3 class="acc-subtitle">Text Paragraph</h3>
+            <textarea id="detail-edit" rows="12" placeholder="Edit the paragraph shown in Text preview..."></textarea>
+            <small class="helper-text">This copy appears in the Text preview.</small>
+
+            <!-- Only reachable while a Story page is selected. Its copy belongs
+                 to that page, not to the post, so editing it here writes to
+                 whichever story page is open. -->
+            <div id="story-fields" hidden>
+              <h3 class="acc-subtitle">Story Page</h3>
+              <textarea id="story-heading-edit" rows="2" placeholder="Short heading for this slide..."></textarea>
+              <small class="helper-text">Wrap words in [brackets] or (parens) for the first accent colour, or {braces} for the second. Left plain, the whole heading is highlighted.</small>
+              <textarea id="story-body-edit" rows="6" placeholder="The paragraph for this slide..."></textarea>
+              <small class="helper-text">Belongs to this page only — each story slide carries its own copy.</small>
+            </div>
+
+          <!-- The writer files the story, because they have the context. QA can
+               still change it at publish; this is the starting point, not a
+               lock. -->
+          <h3 class="acc-subtitle">Section</h3>
+          <div class="section-row">
+            <label class="field">
+              <span class="field-label">Category <span class="required-mark" id="post-category-required" hidden aria-hidden="true">*</span></span>
+              <select id="post-category" aria-required="false"><option value="">Choose a category</option></select>
+            </label>
+            <label class="field" id="post-state-field" hidden>
+              <span class="field-label">State <span class="required-mark" aria-hidden="true">*</span></span>
+              <select id="post-state" aria-required="false"><option value="">Choose a state</option></select>
+            </label>
+          </div>
+          <small class="helper-text" id="post-section-hint">Where this story is filed on the web app.</small>
+            <label class="checkbox-row" style="margin-top:8px;">
+              <input type="checkbox" id="show-timestamp" checked />
+              <span>Show creation time on the Text slide</span>
+            </label>
+            <!-- The stamp defaulted to today with no way to change it, which is
+                 wrong for a story written up a day or two after the event. -->
+            <div class="date-row" id="post-date-row">
+              <label class="field">
+                <span class="field-label">Date on the slide</span>
+                <input type="date" id="post-date" />
+              </label>
+              <button type="button" class="btn-ghost" id="post-date-today">Today</button>
+            </div>
+            <small class="helper-text">Leave it on today unless the story is being posted later.</small>
+
+            <h3 class="acc-subtitle">Keywords</h3>
+            <input type="text" id="post-keywords" placeholder="politics, local, election" />
+            <small class="helper-text">Up to 10, comma separated. Sent with the post to the web app.</small>
+            <h3 class="acc-subtitle">Tag Badge</h3>
+            <div class="preset-grid" id="tag-presets">
+              <button type="button" class="preset-btn active" data-tag="none"          title="No Tag">None</button>
+              <button type="button" class="preset-btn"        data-tag="trending"      title="Trending with icon">🔥 Trending</button>
+              <button type="button" class="preset-btn"        data-tag="trending-text" title="Trending text only">Trending</button>
+              <button type="button" class="preset-btn"        data-tag="breaking"      title="Breaking with icon">⚡ Breaking</button>
+              <button type="button" class="preset-btn"        data-tag="breaking-text" title="Breaking text only">Breaking</button>
+              <button type="button" class="preset-btn"        data-tag="swipe-video"      title="Swipe for Video with icon">▶ Swipe for Video</button>
+              <button type="button" class="preset-btn"        data-tag="swipe-video-text" title="Swipe for Video text only">Swipe for Video</button>
+            </div>
+          </div></div>
+        </div>
+<div class="acc" data-open="false" id="video-acc">
+          <button type="button" class="acc-head" aria-expanded="false">
+            <span class="acc-title">Video</span>
+            <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="acc-body"><div class="acc-inner">
+
+            <div id="video-source-file">
+              <label class="video-file-drop" id="video-file-drop" tabindex="0">
+                <svg width="18" height="18" aria-hidden="true"><use href="#i-upload"/></svg>
+                <span id="video-file-label">Upload a video file</span>
+                <input type="file" id="video-file-input" accept="video/*" hidden />
+              </label>
+              <small class="helper-text">Direct upload only. MP4, MOV or WebM, up to 300 MB.</small>
+            </div>
+
+            <p id="video-status" class="status-text" role="status" aria-live="polite"></p>
+
+            <div id="video-editor" hidden>
+              <video id="video-preview" class="video-preview" playsinline preload="metadata" controls></video>
+
+              <h3 class="acc-subtitle">Trim</h3>
+              <div class="trim-readout">
+                <span id="trim-start-label">0:00.0</span>
+                <span class="trim-duration" id="trim-duration">0.0s</span>
+                <span id="trim-end-label">0:00.0</span>
+              </div>
+              <label class="slider-container">
+                <span class="slider-label">Start</span>
+                <input type="range" id="trim-start" min="0" max="100" step="0.1" value="0" />
+              </label>
+              <label class="slider-container">
+                <span class="slider-label">End</span>
+                <input type="range" id="trim-end" min="0" max="100" step="0.1" value="100" />
+              </label>
+              <div class="trim-actions">
+                <button type="button" id="trim-set-start" class="btn-ghost btn-tiny">Start here</button>
+                <button type="button" id="trim-play" class="btn-ghost btn-tiny">Play range</button>
+                <button type="button" id="trim-set-end" class="btn-ghost btn-tiny">End here</button>
+              </div>
+
+              <h3 class="acc-subtitle">Caption</h3>
+              <textarea id="video-caption" rows="4" placeholder="Text burned into the bottom of the clip..."></textarea>
+              <small class="helper-text">Wrap words in [brackets] or (parens) for the first accent colour, or {braces} for the second.</small>
+              <label class="slider-container" style="margin-top:10px;">
+                <span class="slider-label">Size</span>
+                <input type="range" id="video-caption-size" min="24" max="72" step="1" value="48" />
+              </label>
+
+              <label class="checkbox-row">
+                <input type="checkbox" id="video-mute" />
+                <span>Mute audio</span>
+              </label>
+
+              <button type="button" id="video-export-btn" class="btn-primary btn-export">
+                <svg class="export-icon" width="15" height="15" aria-hidden="true"><use href="#i-download"/></svg>
+                <span id="video-export-label">Export Video</span>
+              </button>
+              <div class="export-progress" id="video-export-progress" hidden>
+                <div class="export-progress-bar"></div>
+              </div>
+            </div>
+
+          </div></div>
+        </div>
+      </div>
+
+  <section class="publish-panel" id="dailymattr-panel" aria-labelledby="dailymattr-title" hidden>
+          <div class="publish-panel-head">
+            <div>
+              <span class="publish-kicker">DailyMattr</span>
+              <h3 id="dailymattr-title">Send this pix to the web app.</h3>
+            </div>
+            <button type="button" class="btn-ghost publish-refresh" id="dailymattr-refresh">Refresh</button>
+          </div>
+  
+          <div class="publish-grid">
+            <label class="field">
+              <span class="field-label">Category</span>
+              <select id="dailymattr-category">
+                <option value="">Sign in to load categories</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">State</span>
+              <select id="dailymattr-state">
+                <option value="">Optional</option>
+              </select>
+            </label>
+          </div>
+  
+          <label class="field">
+            <span class="field-label">Keywords</span>
+            <input type="text" id="dailymattr-keywords" placeholder="politics, local, election" />
+          </label>
+  
+          <label class="field">
+            <span class="field-label">Caption</span>
+            <textarea id="dailymattr-content" rows="3" placeholder="This is sent as content_en to DailyMattr."></textarea>
+          </label>
+  
+          <div class="publish-media" aria-labelledby="dailymattr-media-title">
+            <div class="publish-media-head">
+              <div>
+                <span class="field-label" id="dailymattr-media-title">Additional media outputs</span>
+                <p class="helper-text">Add any mix of images and videos. Each file is optional.</p>
+              </div>
+              <span class="publish-mode" id="dailymattr-media-mode">0 / 3 added</span>
+            </div>
+  
+            <div class="publish-media-grid">
+              <div class="publish-media-slot" data-media-slot="3">
+                <span class="publish-media-number">Extra 1</span>
+                <span class="publish-media-name" id="dailymattr-media-name-3">Add image or video</span>
+                <label class="btn-ghost publish-media-pick" for="dailymattr-media-3">Choose file</label>
+                <input type="file" id="dailymattr-media-3" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" hidden />
+                <button type="button" class="publish-media-remove" data-remove-media="3" aria-label="Remove additional media file 1" hidden>&times;</button>
+              </div>
+              <div class="publish-media-slot" data-media-slot="4">
+                <span class="publish-media-number">Extra 2</span>
+                <span class="publish-media-name" id="dailymattr-media-name-4">Add image or video</span>
+                <label class="btn-ghost publish-media-pick" for="dailymattr-media-4">Choose file</label>
+                <input type="file" id="dailymattr-media-4" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" hidden />
+                <button type="button" class="publish-media-remove" data-remove-media="4" aria-label="Remove additional media file 2" hidden>&times;</button>
+              </div>
+              <div class="publish-media-slot" data-media-slot="5">
+                <span class="publish-media-number">Extra 3</span>
+                <span class="publish-media-name" id="dailymattr-media-name-5">Add image or video</span>
+                <label class="btn-ghost publish-media-pick" for="dailymattr-media-5">Choose file</label>
+                <input type="file" id="dailymattr-media-5" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" hidden />
+                <button type="button" class="publish-media-remove" data-remove-media="5" aria-label="Remove additional media file 3" hidden>&times;</button>
+              </div>
+            </div>
+          </div>
+  
+          <div class="publish-actions">
+            <p class="helper-text publish-help">Publishes the headline poster, an available text card or video, and any added JPG, PNG, WEBP, MP4 or MOV files. Images and videos can be mixed.</p>
+            <button type="button" class="btn-primary publish-submit" id="dailymattr-publish-btn">Publish to DailyMattr</button>
+          </div>
+  
+          <p id="dailymattr-status" class="status-text" role="status" aria-live="polite"></p>
+        </section>
+    </section>
+
+  </main>
+
+  <!-- Media, full width beneath the cards. Buried in a narrow middle
+       column the upload target, the enhance controls and the suggested
+       images all competed for the same 300px; across the page they get room
+       and stop pushing the poster off screen. -->
+
+
+
+  <!-- ═══ VIEW 2: AI Article Writer ═══ -->
+  <section class="article-shell" id="article-view" hidden>
+    <div class="glass-panel article-panel">
+
+      <header class="article-intro">
+        <h1>Write the<br>article.</h1>
+        <p class="desc">AI drafts a newspaper-style headline, 3 key bullets and a ready-to-post tweet from your scraped story.</p>
+        <button type="button" id="article-generate-btn" class="btn-primary">✨ Generate Article</button>
+        <p id="article-status" class="status-text" role="status" aria-live="polite">Build a poster first, then generate.</p>
+      </header>
+
+      <div id="article-result" class="article-result" hidden>
+
+        <div class="article-block">
+          <div class="article-block-head">
+            <span class="article-block-label">Headline</span>
+            <span class="char-count" id="article-headline-count">0 / 90</span>
+            <button type="button" class="copy-btn" data-copy-target="article-headline">Copy</button>
+          </div>
+          <p class="article-headline" id="article-headline"></p>
+        </div>
+
+        <div class="article-block">
+          <div class="article-block-head">
+            <span class="article-block-label">Key Points</span>
+            <button type="button" class="copy-btn" data-copy-target="article-bullets">Copy</button>
+          </div>
+          <ul class="article-bullets" id="article-bullets"></ul>
+        </div>
+
+        <div class="article-block">
+          <div class="article-block-head">
+            <span class="article-block-label">Tweet</span>
+            <span class="char-count" id="article-tweet-count">0 / 280</span>
+            <button type="button" class="copy-btn" data-copy-target="article-tweet">Copy</button>
+          </div>
+          <p class="article-tweet" id="article-tweet"></p>
+        </div>
+
+        <div class="article-block article-flags" id="article-flags-block" hidden>
+          <div class="article-block-head">
+            <span class="article-block-label">⚠ Editorial flags</span>
+          </div>
+          <ul class="article-bullets" id="article-flags"></ul>
+        </div>
+
+        <button type="button" id="article-copy-all" class="btn-secondary">📋 Copy Everything</button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══ VIEW 3: QA review (QA accounts only) ═══ -->
+  <section class="review-shell" id="review-view" hidden>
+    <div class="glass-panel review-panel">
+      <header class="review-intro">
+        <h1 id="review-title">Review<br>and publish.</h1>
+        <p class="desc" id="review-desc">Every post the writers have saved. Open one to edit and publish it, or send it back with Reject.</p>
+      </header>
+
+      <div class="review-toolbar">
+        <!-- qa-only moved off the bar and onto the three queue tabs. It used to
+             sit on the container, which hid every filter from writers — Drafts
+             included, i.e. the one tab that lists a writer's own unfinished
+             work, hidden from the only role that has any. Saving a draft was a
+             write-only hole: the dialog said "Kept in My posts" and My posts
+             never showed it.
+             Awaiting / Approved / Rejected stay reviewer-only: they are the
+             states of QA's queue, and a writer's own posts are already all
+             theirs under All. -->
+        <div class="review-filters" id="review-filters" role="tablist" aria-multiselectable="true" aria-label="Filter (pick several)" title="Click to toggle — several can be on at once">
+          <button type="button" class="review-filter active" data-filter="all" role="tab" aria-selected="true">All</button>
+          <!-- Reviewer-only, and the counterpart to a writer's whole view. A
+               writer's list IS their own posts; the moment someone is QA the
+               same screen becomes everyone's, so a reviewer who also writes
+               had 500+ rows and no way to find the handful that are theirs. -->
+          <button type="button" class="review-filter qa-only" data-filter="mine" role="tab" aria-selected="false">Mine</button>
+          <button type="button" class="review-filter qa-only" data-filter="awaiting" role="tab" aria-selected="false">Awaiting</button>
+          <button type="button" class="review-filter" data-filter="drafts" role="tab" aria-selected="false">Drafts</button>
+          <button type="button" class="review-filter qa-only" data-filter="approved" role="tab" aria-selected="false">Approved</button>
+          <button type="button" class="review-filter qa-only" data-filter="rejected" role="tab" aria-selected="false">Rejected</button>
+          <!-- Published is where a correction starts: DailyMattr cannot edit an
+               entry, so fixing a live story means reopening the exact post that
+               went out and sending a corrected copy. Without this tab those
+               posts were only findable by scrolling Approved. -->
+          <button type="button" class="review-filter qa-only" data-filter="published" role="tab" aria-selected="false">Published</button>
+        </div>
+        <!-- Searches server-side, so it reaches past the 100-row page rather
+             than filtering only what is already on screen. -->
+        <label class="review-search">
+          <input type="search" id="review-search" placeholder="Search headline, writer or source…" />
+        </label>
+        <!-- Filters on the date each row shows: published / approved /
+             rejected / edited under a single status tab, created otherwise. -->
+        <div class="review-dates" id="review-dates" role="group" aria-label="Date range">
+          <div class="review-dates-range">
+            <span class="review-dates-label">Date</span>
+            <input type="date" id="review-date-from" aria-label="From date" />
+            <span class="review-dates-sep">to</span>
+            <input type="date" id="review-date-to" aria-label="To date" />
+          </div>
+          <button type="button" class="review-dates-apply" id="review-date-apply">Apply</button>
+          <button type="button" class="review-dates-reset" id="review-date-clear">Reset</button>
+        </div>
+        <button type="button" class="btn-ghost" id="review-refresh">Refresh</button>
+      </div>
+
+      <p class="status-text" id="review-status" role="status" aria-live="polite"></p>
+      <!-- Bulk actions (QA only): tick rows, then reject or delete them in one go. -->
+      <div class="review-bulk qa-only" id="review-bulk" hidden>
+        <label class="review-bulk-all">
+          <input type="checkbox" id="review-select-all" aria-label="Select all posts shown" />
+          <span id="review-bulk-count">Select all</span>
+        </label>
+        <div class="review-bulk-actions">
+          <button type="button" class="btn-ghost btn-reject" id="review-bulk-reject" disabled>Reject selected</button>
+          <button type="button" class="btn-ghost review-bulk-delete" id="review-bulk-delete" disabled>Delete selected</button>
+          <button type="button" class="btn-ghost" id="review-bulk-clear" hidden>Clear</button>
+        </div>
+      </div>
+      <ul class="review-list" id="review-list"></ul>
+    </div>
+  </section>
+
+  <section class="analytics-shell" id="analytics-view" hidden>
+    <header class="analytics-intro">
+      <div class="analytics-intro-actions">
+        <span class="analytics-updated" id="analytics-updated">Waiting for data</span>
+        <button type="button" class="btn-ghost analytics-refresh" id="analytics-refresh">Refresh data</button>
+      </div>
+    </header>
+
+    <p class="status-text" id="analytics-status" role="status" aria-live="polite"></p>
+
+    <section class="analytics-filterbar" aria-label="Analytics filters">
+      <div class="analytics-filterbar-copy">
+        <span class="analytics-card-label">View</span>
+        <strong>Filter the whole dashboard</strong>
+        <span id="analytics-filter-summary">All sources · All categories · All dates</span>
+      </div>
+      <div class="analytics-filterbar-controls">
+        <div class="analytics-roster-filter">
+          <span id="analytics-source-caption">Source</span>
+          <div class="analytics-select" id="analytics-source">
+            <button type="button" class="analytics-select-trigger" id="analytics-source-trigger"
+                    aria-haspopup="listbox" aria-expanded="false"
+                    aria-labelledby="analytics-source-caption analytics-source-label">
+              <span id="analytics-source-label">All sources</span>
+              <span class="analytics-select-chevron" aria-hidden="true"></span>
+            </button>
+            <ul class="analytics-select-menu" id="analytics-source-menu" role="listbox"
+                aria-labelledby="analytics-source-caption" tabindex="-1"></ul>
+          </div>
+        </div>
+
+        <div class="analytics-roster-filter">
+          <span id="analytics-category-caption">Category</span>
+          <div class="analytics-select" id="analytics-category">
+            <button type="button" class="analytics-select-trigger" id="analytics-category-trigger"
+                    aria-haspopup="listbox" aria-expanded="false"
+                    aria-labelledby="analytics-category-caption analytics-category-label">
+              <span id="analytics-category-label">All categories</span>
+              <span class="analytics-select-chevron" aria-hidden="true"></span>
+            </button>
+            <ul class="analytics-select-menu" id="analytics-category-menu" role="listbox"
+                aria-labelledby="analytics-category-caption" tabindex="-1"></ul>
+          </div>
+        </div>
+
+        <div class="analytics-roster-filter analytics-roster-dates">
+          <span>Date</span>
+          <input type="date" id="analytics-from" aria-label="From date" />
+          <span class="analytics-date-separator">to</span>
+          <input type="date" id="analytics-to" aria-label="To date" />
+        </div>
+
+        <button type="button" class="analytics-filter-apply" id="analytics-range-apply">Apply</button>
+        <button type="button" class="analytics-filter-clear" id="analytics-range-clear">Reset</button>
+      </div>
+    </section>
+
+    <section class="analytics-hero">
+      <div class="analytics-stat-card accent-a">
+        <span class="analytics-stat-label">Sent</span>
+        <strong class="analytics-stat-value" data-analytics-value="sent">0</strong>
+        <span class="analytics-stat-sub" id="analytics-sent-sub">Posts saved in the workflow</span>
+      </div>
+      <div class="analytics-stat-card accent-b">
+        <span class="analytics-stat-label">Approved</span>
+        <strong class="analytics-stat-value" data-analytics-value="approved">0</strong>
+        <span class="analytics-stat-sub" id="analytics-approved-sub">Cleared by QA</span>
+      </div>
+      <div class="analytics-stat-card accent-e">
+        <span class="analytics-stat-label">Rejected</span>
+        <strong class="analytics-stat-value" data-analytics-value="rejected">0</strong>
+        <span class="analytics-stat-sub" id="analytics-rejected-sub">Returned for changes</span>
+      </div>
+      <div class="analytics-stat-card accent-c">
+        <span class="analytics-stat-label">Pending</span>
+        <strong class="analytics-stat-value" data-analytics-value="pending">0</strong>
+        <span class="analytics-stat-sub" id="analytics-pending-sub">Waiting in the queue</span>
+      </div>
+      <div class="analytics-stat-card accent-d">
+        <span class="analytics-stat-label">Approval Rate</span>
+        <strong class="analytics-stat-value" data-analytics-value="rate">0%</strong>
+        <span class="analytics-stat-sub" id="analytics-rate-sub">Share of posts approved</span>
+      </div>
+    </section>
+
+    <section class="analytics-today-card" aria-labelledby="analytics-today-title">
+      <div class="analytics-today-intro">
+        <div class="analytics-today-kicker-row">
+          <span class="analytics-card-label">Today</span>
+          <span class="analytics-live-badge"><span aria-hidden="true"></span>Live</span>
+        </div>
+        <h2 id="analytics-today-title">Daily activity</h2>
+        <p id="analytics-today-date">Current India business day</p>
+        <p class="analytics-reset-note" id="analytics-daily-reset">Resets automatically at 12:00 AM IST</p>
+      </div>
+      <div class="analytics-today-metrics">
+        <div class="analytics-today-metric tone-sent">
+          <span>Sent</span>
+          <strong data-analytics-daily-value="sent">0</strong>
+          <small>New posts</small>
+        </div>
+        <div class="analytics-today-metric tone-approved">
+          <span>Approved</span>
+          <strong data-analytics-daily-value="approved">0</strong>
+          <small>QA decisions</small>
+        </div>
+        <div class="analytics-today-metric tone-rejected">
+          <span>Rejected</span>
+          <strong data-analytics-daily-value="rejected">0</strong>
+          <small>QA decisions</small>
+        </div>
+        <div class="analytics-today-metric tone-pending">
+          <span>Pending</span>
+          <strong data-analytics-daily-value="pending">0</strong>
+          <small>From today</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="analytics-grid analytics-meta-grid">
+      <article class="analytics-card analytics-meta-card">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Workflow Health</span>
+            <h3 id="analytics-meta-title">Throughput</h3>
+          </div>
+        </div>
+        <div class="analytics-metric-list" id="analytics-meta-list"></div>
+      </article>
+    </section>
+
+      <section class="analytics-grid analytics-roster-grid">
+        <article class="analytics-card analytics-roster-card" id="analytics-roster-card">
+          <div class="analytics-card-head analytics-roster-head">
+            <div>
+              <span class="analytics-card-label">Team</span>
+              <h3 id="analytics-roster-title">Content writers</h3>
+              <p class="analytics-roster-desc" id="analytics-roster-desc">Verdicts on each writer's posts.</p>
+            </div>
+            <span class="analytics-roster-cue">
+              <span class="analytics-roster-modes" role="group" aria-label="Show writers or QA approvers">
+                <button type="button" class="analytics-roster-mode is-active" data-roster-mode="writers" aria-pressed="true">Writers</button>
+                <button type="button" class="analytics-roster-mode" data-roster-mode="qa" aria-pressed="false">QA</button>
+              </span>
+              <button type="button" class="analytics-roster-expand" id="analytics-roster-toggle"
+                      aria-expanded="true" aria-controls="analytics-roster-body">
+                <span id="analytics-roster-count">0 writers</span>
+                <span class="analytics-roster-chevron" aria-hidden="true"></span>
+              </button>
+            </span>
+          </div>
+          <div class="analytics-roster-body" id="analytics-roster-body">
+            <div class="analytics-roster-list" id="analytics-roster-list"></div>
+          </div>
+        </article>
+      </section>
+
+    <section class="analytics-grid analytics-board-grid">
+      <!-- Recent content, each row naming its writer. The roster above says who
+           is producing overall; this says who wrote THIS story, and opens it. -->
+      <article class="analytics-card analytics-card-wide">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Content</span>
+            <h3>Recent posts</h3>
+            <p class="analytics-roster-desc">Open a post to review its content and publishing status.</p>
+          </div>
+          <label class="analytics-search">
+            <input type="search" id="analytics-search" placeholder="Filter by headline or writer…" />
+          </label>
+        </div>
+        <div class="analytics-recent" id="analytics-recent"></div>
+      </article>
+    </section>
+  </section>
+
+  <!-- ═══ Writers (QA only) ═══
+       Two jobs on one page: the roster of who writes for you, and — on
+       clicking any of them — everything that writer has produced. Account
+       admin (create / reset / disable) hangs off each row rather than sitting
+       in a separate form, because it is the rarer action. -->
+  <section class="review-shell" id="writers-view" hidden>
+    <header class="review-head">
+      <div>
+        <h2 class="review-title">Content<br>writers.</h2>
+        <p class="review-desc">Everyone who writes for Shortly. Pick a name to see their stories.</p>
+      </div>
+      <button type="button" class="btn-primary writers-add-toggle" id="writers-add-toggle">+ Add writer</button>
+    </header>
+
+    <form class="writers-form" id="writer-create-form" hidden>
+      <label class="field">
+        <span class="field-label">Username</span>
+        <input type="text" id="writer-username" placeholder="writer6" autocomplete="off" required />
+      </label>
+      <label class="field">
+        <span class="field-label">Display name</span>
+        <input type="text" id="writer-display" placeholder="Content Writer 6" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span class="field-label">Password</span>
+        <input type="text" id="writer-password" placeholder="at least 6 characters" autocomplete="off" required />
+      </label>
+      <label class="field">
+        <span class="field-label">Role</span>
+        <select id="writer-role">
+          <option value="writer" selected>Writer</option>
+          <option value="qa">QA</option>
+        </select>
+      </label>
+      <button type="submit" class="btn-primary" id="writer-create-btn">Create account</button>
+      <small class="helper-text writers-form-note">Shown in plain text so you can pass it on — it is stored hashed and can never be read back.</small>
+    </form>
+
+    <div class="review-toolbar">
+      <p id="writers-status" class="status-text" role="status" aria-live="polite"></p>
+      <button type="button" class="btn-ghost" id="writers-refresh">Refresh</button>
+    </div>
+
+    <div class="writers-layout">
+      <ul class="writers-list" id="writers-list"></ul>
+
+      <section class="writer-detail" id="writer-detail" aria-live="polite">
+        <div class="writer-detail-empty" id="writer-detail-empty">
+          <p>Pick a writer to see everything they have written.</p>
+        </div>
+        <div class="writer-detail-body" id="writer-detail-body" hidden>
+          <header class="writer-detail-head">
+            <div>
+              <h3 id="writer-detail-name">—</h3>
+              <p class="writer-detail-meta" id="writer-detail-meta"></p>
+            </div>
+          </header>
+          <ul class="review-list" id="writer-posts"></ul>
+        </div>
+      </section>
+
+    </div>
+  </section>
+
+  <!-- ═══ Confirmation dialog ═══
+       One <dialog> reused by every irreversible action. Native <dialog> gives
+       Esc-to-cancel, focus trapping and the top layer for free — a hand-rolled
+       overlay would have to reimplement all three, and the poster editor has
+       enough stacking contexts to get that wrong. -->
+  <dialog class="pix-dialog" id="pix-dialog" aria-labelledby="pix-dialog-title">
+    <form method="dialog" class="pix-dialog-inner">
+      <h3 class="pix-dialog-title" id="pix-dialog-title">Are you sure?</h3>
+      <p class="pix-dialog-body" id="pix-dialog-body"></p>
+      <ul class="pix-dialog-facts" id="pix-dialog-facts" hidden></ul>
+      <!-- Optional controls a caller can drop into the dialog, e.g. the
+           category picker shown when a post reaches Review without one. -->
+      <div class="pix-dialog-extras" id="pix-dialog-extras" hidden></div>
+      <div class="pix-dialog-actions">
+        <button type="submit" value="cancel" class="btn-ghost" id="pix-dialog-cancel">Cancel</button>
+        <button type="submit" value="confirm" class="btn-primary" id="pix-dialog-confirm">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="pix-dialog" id="edit-writer-dialog" aria-labelledby="edit-writer-title">
+    <form class="pix-dialog-inner" id="edit-writer-form">
+      <h3 class="pix-dialog-title" id="edit-writer-title">Edit Writer</h3>
+      <p class="pix-dialog-body" id="edit-writer-error" style="color:var(--c-red); font-size: 0.875rem;" hidden></p>
+      <label class="field" style="text-align: left; margin-bottom: 1rem;">
+        <span class="field-label">Username</span>
+        <input type="text" id="edit-writer-username" required />
+      </label>
+      <label class="field" style="text-align: left; margin-bottom: 1rem;">
+        <span class="field-label">Display name</span>
+        <input type="text" id="edit-writer-display" />
+      </label>
+      <label class="field" style="text-align: left; margin-bottom: 1.5rem;">
+        <span class="field-label">Role</span>
+        <select id="edit-writer-role">
+          <option value="writer">Writer</option>
+          <option value="qa">QA</option>
+        </select>
+      </label>
+      <div class="pix-dialog-actions">
+        <button type="button" class="btn-ghost" id="edit-writer-cancel">Cancel</button>
+        <button type="submit" class="btn-primary" id="edit-writer-confirm">Save Changes</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ═══ Screen Zoom Preview Modal ═══ -->
+  <dialog class="screen-preview-modal" id="screen-preview-modal" aria-labelledby="screen-preview-modal-type">
+    <div class="screen-preview-modal-wrapper">
+      <div class="screen-preview-modal-header">
+        <div class="screen-preview-modal-badge">
+          <span class="screen-preview-modal-num" id="screen-preview-modal-num">1</span>
+          <span class="screen-preview-modal-type" id="screen-preview-modal-type">POSTER</span>
+        </div>
+        <div class="screen-preview-modal-actions">
+          <button type="button" class="btn-ghost screen-preview-modal-btn" id="screen-preview-prev-btn" title="Previous screen (←)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <button type="button" class="btn-ghost screen-preview-modal-btn" id="screen-preview-next-btn" title="Next screen (→)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+          <button type="button" class="btn-ghost screen-preview-modal-btn" id="screen-preview-download-btn" title="Download this screen">
+            <svg width="13" height="13" aria-hidden="true"><use href="#i-download"/></svg> Download
+          </button>
+          <button type="button" class="screen-preview-modal-close" id="screen-preview-modal-close" aria-label="Close" title="Close (Esc)">
+            &times;
+          </button>
+        </div>
+      </div>
+      <div class="screen-preview-modal-stage">
+        <div class="screen-preview-canvas-wrap">
+          <canvas id="screen-preview-modal-canvas" width="920" height="1700"></canvas>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="./app.js"></script>
+      </div><!-- /.cms-body -->
+    </div><!-- /.cms-main -->
+  </div><!-- /.cms-layout -->
+
+</body>
+</html>

@@ -1,0 +1,6618 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  /* ── Light "studio" theme ──────────────────────────────────
+     Warm off-white canvas, clean white panels, one single-blue
+     accent family. All the incidental "overlay" effects route
+     through semantic tokens (--hairline, --hover-tint, --sunken…)
+     so the whole system stays consistent on a light base. */
+
+  --bg-color: #eef2fb;
+  /* soft lavender-grey page */
+  --surface: #ffffff;
+  /* panels — clean white */
+  --surface-2: #f7f9fe;
+  /* nested / subtle fills */
+  --surface-input: #eff3fc;
+  /* sunken input wells */
+  --surface-card: #f6f9fe;
+  /* Opaque — native <option> popups cannot sit on a translucent fill. */
+  --surface-solid: #ffffff;
+  /* card backgrounds */
+
+  /* Overlay tints — dark ink at low alpha (the light-theme
+     equivalent of the old white-on-dark overlays) */
+  --hairline: rgba(28, 25, 64, 0.10);
+  /* borders */
+  --hairline-2: rgba(28, 25, 64, 0.06);
+  /* subtle borders */
+  --hover-tint: rgba(28, 25, 64, 0.045);
+  /* hover backgrounds */
+  --press-tint: rgba(28, 25, 64, 0.08);
+  /* active/pressed */
+  --sunken: rgba(28, 25, 64, 0.05);
+  /* recessed wells */
+
+  --border-color: var(--hairline);
+  --border-subtle: var(--hairline-2);
+
+  --text-primary: #111a2e;
+  /* near-ink */
+  --text-secondary: #55607a;
+  --text-muted: #949db4;
+  /* Eyebrow labels, chips and secondary copy across the analytics cards. Plain
+     --text-muted washed out against the card fill; carrying a little of the
+     accent keeps them clearly secondary while giving them enough presence to
+     read. Declared on :root (not the shell) so the dark-theme override below
+     actually wins the cascade. */
+  --analytics-faint: #4f66a8;
+
+  /* Frosted-glass surfaces, tinted with the accent rather than neutral white so
+     anything built from them picks up the page's own colour. */
+  --glass-fill: rgba(255, 255, 255, 0.55);
+  --glass-inner: rgba(255, 255, 255, 0.72);
+  --glass-edge: rgba(57, 121, 255, 0.16);
+  --glass-edge-strong: rgba(57, 121, 255, 0.30);
+  --glass-menu: rgba(244, 247, 255, 0.88);
+  --glass-shadow: 0 4px 18px rgba(17, 26, 46, 0.08);
+
+  --accent: #3979ff;
+  /* the brand blue, darkened just enough to stay readable as text on white */
+  --accent-dim: #2560e0;
+  --accent-deep: #1443ad;
+  --accent-soft: rgba(57, 121, 255, 0.10);
+  /* tinted chip fills */
+  --accent-glow: rgba(57, 121, 255, 0.26);
+  --iris: #00b8d4;
+  /* magenta — AI features only */
+
+  --green: #10b981;
+  --green-soft: rgba(16, 185, 129, 0.12);
+  --red: #ef4444;
+
+  --radius-xl: 20px;
+  --radius-lg: 14px;
+  --radius-md: 11px;
+  --radius-sm: 9px;
+
+  /* Soft, slightly blue-tinted elevation for a light UI */
+  --shadow-sm: 0 1px 2px rgba(28, 25, 64, 0.06), 0 2px 6px rgba(20, 67, 173, 0.05);
+  --shadow-md: 0 6px 16px rgba(20, 67, 173, 0.08), 0 2px 6px rgba(28, 25, 64, 0.05);
+  --shadow-lg: 0 22px 48px rgba(20, 67, 173, 0.12), 0 6px 16px rgba(28, 25, 64, 0.06);
+
+  --font-display: 'Poppins', 'Inter', sans-serif;
+
+  --nav-height: 56px;
+  --transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  --spring: cubic-bezier(0.34, 1.4, 0.4, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  /* Eliminates the grey/blue flash when an element is tapped on iOS */
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* Prevent Safari from inflating text 1.2× on iPhone landscape */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  /* dvh fixes the Safari URL-bar bug where 100vh overflows the viewport */
+  min-height: 100dvh;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Hairline overscroll bounce is fine; this just prevents horizontal slop */
+  overscroll-behavior-x: none;
+}
+
+/* ─── Atmosphere: slow aurora + film grain ───────────────────
+   Three blurred colour fields drift behind the UI. transform-only
+   animation (GPU-composited); the global prefers-reduced-motion rule
+   freezes them automatically. */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.aurora i {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.55;
+  will-change: transform;
+}
+
+.aurora i {
+  opacity: 0.7;
+}
+
+.aurora i:nth-child(1) {
+  width: 46vw;
+  height: 46vw;
+  left: -12vw;
+  top: -18vw;
+  background: radial-gradient(circle, rgba(57, 121, 255, 0.55), transparent 66%);
+  animation: aurora-a 46s ease-in-out infinite alternate;
+}
+
+.aurora i:nth-child(2) {
+  width: 40vw;
+  height: 40vw;
+  right: -12vw;
+  bottom: -16vw;
+  background: radial-gradient(circle, rgba(129, 140, 248, 0.42), transparent 66%);
+  animation: aurora-b 58s ease-in-out infinite alternate;
+}
+
+.aurora i:nth-child(3) {
+  width: 28vw;
+  height: 28vw;
+  left: 46vw;
+  top: 30vh;
+  background: radial-gradient(circle, rgba(244, 171, 252, 0.32), transparent 66%);
+  animation: aurora-c 70s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-a {
+  to {
+    transform: translate(9vw, 7vh) scale(1.15);
+  }
+}
+
+@keyframes aurora-b {
+  to {
+    transform: translate(-8vw, -6vh) scale(1.1);
+  }
+}
+
+@keyframes aurora-c {
+  to {
+    transform: translate(-12vw, 9vh) scale(1.25);
+  }
+}
+
+/* Fine grain to kill gradient banding. On a light base, darken very
+   slightly (multiply) instead of the old white noise. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.018 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+body.auth-checking .app-nav,
+body.auth-checking .fab,
+body.auth-checking .app-shell,
+body.auth-blocked .app-nav,
+body.auth-blocked .fab,
+body.auth-blocked .app-shell {
+  display: none;
+}
+
+body.auth-ready .agent-auth-gate {
+  display: none;
+}
+
+.agent-auth-gate {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.agent-auth-card {
+  width: min(520px, 100%);
+  padding: 28px;
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+}
+
+.agent-auth-kicker {
+  display: inline-flex;
+  margin-bottom: 12px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.agent-auth-card h1 {
+  margin: 0 0 10px;
+  font-size: clamp(2rem, 5vw, 3rem);
+  /* These headings are painted with background-clip:text, so the gradient
+     only covers the element's own box — a descender hanging below the line
+     box is simply not painted, which is why the "g" in "Sign in" was losing
+     its tail. Room for the descender, plus a little padding for the round
+     end of the stroke. */
+  line-height: 1.2;
+  padding-bottom: 0.16em;
+  letter-spacing: -0.05em;
+}
+
+.agent-auth-card p {
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.65;
+}
+
+.agent-auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.agent-auth-primary {
+  text-decoration: none;
+}
+
+/* ─── Login form ─────────────────────────────────────────────── */
+
+.login-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.login-form[hidden] {
+  display: none;
+}
+
+.login-field {
+  display: grid;
+  gap: 6px;
+}
+
+.login-field span {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.login-field input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--surface-input);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.login-field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+#login-submit {
+  justify-self: start;
+}
+
+/* ─── Role badge ─────────────────────────────────────────────── */
+
+.role-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(57, 121, 255, 0.14);
+  color: var(--accent-dim, #3979ff);
+  border: 1px solid rgba(57, 121, 255, 0.3);
+}
+
+/* The signed-in user's own tally. Quieter than the role badge on purpose:
+   it is information, not identity, and it sits next to a badge that is
+   already carrying colour. */
+.nav-count {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--surface-input, rgba(148, 163, 184, 0.12));
+  /* --text-dim was never a token in this system, so this was silently falling
+     back to a hardcoded grey that measured 2.35:1. */
+  color: var(--text-secondary);
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.22));
+  white-space: nowrap;
+}
+
+/* QA is the role that can change other people's work — worth telling apart at
+   a glance from the writer accounts. */
+/* Before the session resolves the role is still empty — stay hidden until we
+   positively know the user is QA, so nothing flashes for a writer. */
+/* An admin can do everything QA can, so they must see everything marked
+   qa-only too — gating on the literal string "qa" would have hidden the
+   review filters from the one role that outranks it. */
+body:not([data-role="qa"]):not([data-role="admin"]) .qa-only {
+  display: none;
+}
+
+body:not([data-role="admin"]) .admin-only {
+  display: none;
+}
+
+.role-badge.is-qa {
+  background: rgba(16, 152, 110, 0.14);
+  color: #10986e;
+  border-color: rgba(16, 152, 110, 0.32);
+}
+
+/* A writer cannot edit anyone else's post, so the controls that would fail
+   server-side are not offered in the first place. */
+body[data-role="writer"] .qa-only {
+  display: none;
+}
+
+/* ─── Touch & a11y baseline ────────────────────────────────── */
+
+/* Eliminates the 300 ms double-tap-to-zoom delay on every clickable element */
+button,
+a,
+input[type="range"],
+input[type="color"],
+.preset-btn,
+.stock-item,
+.mode-tab,
+.upload-zone,
+.color-circle {
+  touch-action: manipulation;
+}
+
+/* Focus-visible rings for keyboard users (no rings on mouse click) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible,
+.preset-btn:focus-visible,
+.mode-tab:focus-visible,
+.btn-ghost:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
+  outline-offset: 3px;
+}
+
+/* Respect users who turn down motion in their OS settings */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  .btn-primary:hover,
+  .btn-ghost:hover {
+    transform: none;
+  }
+}
+
+/* ─── Navbar ─────────────────────────────────────────────────── */
+.app-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: calc(var(--nav-height) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  /* Full-bleed bar (background + border span the viewport); the horizontal
+     gutter lives on .nav-inner so nav content aligns with the app-shell. */
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+/* Centered inner rail — mirrors .app-shell's width + auto margins so the logo
+   lines up with the first column and the actions with the preview's right edge.
+   The two side groups (logo, actions) flex-grow equally, which pins the middle
+   view-tabs to the true center regardless of how wide either side is. */
+.nav-inner {
+  width: min(1380px, 100vw - 40px);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-logo {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.nav-logo-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, var(--accent) 0%, #1443ad 100%);
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: white;
+  box-shadow: 0 4px 12px rgba(77, 132, 255, 0.35);
+  flex-shrink: 0;
+}
+
+.nav-badge {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(57, 121, 255, 0.2);
+  padding: 3px 9px;
+  border-radius: 100px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nav-actions {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.nav-link {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav-link:hover {
+  color: var(--text-primary);
+}
+
+.nav-session {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 5px 4px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-input) 82%, transparent);
+}
+
+.nav-account {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 230px;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.1;
+}
+
+.nav-account-label {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nav-account-name {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.nav-logout:hover {
+  background: var(--press-tint);
+  color: var(--text-primary);
+}
+
+.nav-account[hidden],
+.nav-logout[hidden] {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .nav-badge {
+    display: none;
+  }
+
+  .nav-actions {
+    gap: 10px;
+  }
+}
+
+/* ─── Typography ─────────────────────────────────────────────── */
+h1 {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  /* background-clip:text paints only inside the box, so descenders need to
+     sit inside it — see the note on .agent-auth-card h1. */
+  line-height: 1.22;
+  padding-bottom: 0.12em;
+  background: linear-gradient(150deg, #10265e 0%, #1f56d1 55%, #3979ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 6px;
+}
+
+p.desc {
+  color: var(--text-secondary);
+  font-size: 0.83rem;
+  line-height: 1.6;
+  max-width: 96%;
+}
+
+/* Compact hero inside the narrow controls column — the panel is a tool,
+   not a landing page, so the heading stays quiet. */
+.panel-copy {
+  margin-bottom: 4px;
+}
+
+.panel-copy h1 {
+  font-size: 1.2rem;
+  line-height: 1.15;
+  margin-bottom: 4px;
+}
+
+.panel-copy .desc {
+  font-size: 0.79rem;
+}
+
+/* ─── Layout — 3-column grid ─────────────────────────────────── */
+.app-shell {
+  width: min(1380px, 100vw - 40px);
+  margin: 22px auto 48px;
+  display: grid;
+  /* Proportional, not two pinned narrow columns beside a greedy preview.
+     The preview holds a row of short cards in a scroller, so handing it
+     every leftover pixel left 260px of dead space while the editing
+     columns stayed cramped at ~245px with 12-row textareas in them. */
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* ─── Panels — clean white cards on the lavender canvas ──────── */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  overflow: hidden;
+}
+
+/* Staggered entrance — panels rise softly into place on first paint */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.992);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.controls-panel {
+  animation: panel-in 0.55s var(--spring) 0.05s both;
+}
+
+.image-panel {
+  animation: panel-in 0.55s var(--spring) 0.12s both;
+}
+
+.preview-panel {
+  animation: panel-in 0.55s var(--spring) 0.19s both;
+}
+
+.controls-panel {
+  padding: 22px 22px 26px;
+}
+
+.image-panel {
+  position: sticky;
+  top: calc(var(--nav-height) + 14px);
+  max-height: calc(100vh - var(--nav-height) - 36px);
+  overflow-y: auto;
+  padding: 22px 20px 24px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(57, 121, 255, 0.28) transparent;
+}
+
+.image-panel::-webkit-scrollbar {
+  width: 4px;
+}
+
+.image-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.image-panel::-webkit-scrollbar-thumb {
+  background: rgba(57, 121, 255, 0.25);
+  border-radius: 4px;
+}
+
+.preview-panel {
+  position: sticky;
+  top: calc(var(--nav-height) + 14px);
+  /* Shrink to the cards rather than filling the viewport. max-height keeps
+     it scrollable if the rail ever grows past the screen. */
+  max-height: calc(100vh - var(--nav-height) - 36px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 22px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(57, 121, 255, 0.28) transparent;
+}
+
+.preview-panel::-webkit-scrollbar {
+  width: 4px;
+}
+
+.preview-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.preview-panel::-webkit-scrollbar-thumb {
+  background: rgba(57, 121, 255, 0.25);
+  border-radius: 4px;
+}
+
+
+/* Panel headings are quiet overlines — the content is the hero */
+.panel-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* ─── Section header (flat, no card) ─────────────────────────── */
+.section {
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.section:first-of-type {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: none;
+}
+
+.section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  display: block;
+}
+
+/* ─── Accordion sections ──────────────────────────────────────
+   Tap-to-expand groups so the controls panel stays compact on every
+   screen size. Animation uses the grid-template-rows: 0fr → 1fr trick
+   which gives smooth CSS-only height transitions in all modern browsers. */
+
+.acc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.acc {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.acc-list>.acc:first-child {
+  border-top: none;
+}
+
+.acc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% + 16px);
+  margin-inline: -8px;
+  padding: 12px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.87rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: var(--transition);
+}
+
+.acc-head:hover {
+  color: var(--text-primary);
+  background: var(--hover-tint);
+}
+
+.acc-title {
+  flex: 1;
+}
+
+.acc-meta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--hover-tint);
+  border: 1px solid var(--hairline);
+  padding: 3px 9px;
+  border-radius: 100px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.acc-chevron {
+  color: var(--text-secondary);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.acc[data-open="true"]>.acc-head .acc-chevron {
+  transform: rotate(0deg);
+}
+
+.acc[data-open="false"]>.acc-head .acc-chevron {
+  transform: rotate(-90deg);
+}
+
+/* Smooth height collapse using grid-template-rows trick */
+.acc-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.acc[data-open="false"]>.acc-body {
+  grid-template-rows: 0fr;
+}
+
+.acc-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.acc[data-open="true"]>.acc-body>.acc-inner {
+  /* Padding only when open — keeps the closed height truly 0 */
+  padding-bottom: 14px;
+}
+
+.acc-subtitle {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 14px 0 8px;
+}
+
+.acc-inner> :first-child+.acc-subtitle,
+.acc-inner>.acc-subtitle:first-child {
+  margin-top: 2px;
+}
+
+.acc-subgroup {
+  margin-top: 16px;
+}
+
+/* ─── Mode Tabs ──────────────────────────────────────────────── */
+.mode-tabs {
+  display: flex;
+  gap: 3px;
+  background: var(--surface-input);
+  border: 1px solid var(--border-color);
+  border-radius: 100px;
+  padding: 4px;
+  margin-top: 16px;
+}
+
+.mode-tab {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 100px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.mode-tab:hover {
+  color: var(--text-primary);
+  background: var(--hover-tint);
+}
+
+.mode-tab.active {
+  background: linear-gradient(135deg, rgba(77, 132, 255, 0.26), rgba(80, 80, 230, 0.16));
+  color: var(--accent-dim);
+  box-shadow: 0 0 0 1px rgba(77, 132, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* ─── Form / Inputs ──────────────────────────────────────────── */
+.form-group {
+  margin-top: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.field label,
+.field-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+input[type="url"],
+input[type="text"],
+select,
+textarea {
+  width: 100%;
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.87rem;
+  padding: 10px 12px;
+  transition: var(--transition);
+  outline: none;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 70px;
+  line-height: 1.55;
+}
+
+#write-detail,
+#detail-edit {
+  font-weight: 700;
+}
+
+input[type="url"]:focus,
+input[type="text"]:focus,
+select:focus,
+textarea:focus {
+  border-color: rgba(77, 132, 255, 0.5);
+  background: var(--surface-input);
+  box-shadow: 0 0 0 3px rgba(77, 132, 255, 0.1);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #64748b;
+  opacity: 0.85;
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  /* Oversized gradient pans across on hover — feels alive without motion noise */
+  background: linear-gradient(115deg, #1443ad 0%, #3979ff 40%, #1443ad 80%, #3979ff 100%);
+  background-size: 240% 100%;
+  background-position: 0% 0;
+  color: white;
+  border: none;
+  padding: 11px 18px;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition: background-position 0.5s ease, transform 0.18s var(--spring), box-shadow 0.25s ease;
+  box-shadow: 0 4px 18px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  width: 100%;
+  letter-spacing: -0.01em;
+  font-family: inherit;
+}
+
+.btn-primary:hover {
+  background-position: 95% 0;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 26px rgba(139, 92, 246, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.btn-primary:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.btn-secondary {
+  background: var(--hover-tint);
+  border: 1px solid var(--hairline);
+  color: var(--text-secondary);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: inherit;
+  width: 100%;
+}
+
+.btn-secondary:hover {
+  background: var(--hover-tint);
+  border-color: var(--hairline);
+  color: var(--text-primary);
+}
+
+/* ─── Preset Buttons (Tags) ──────────────────────────────────── */
+.preset-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-btn {
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+  color: var(--text-secondary);
+  padding: 6px 11px;
+  border-radius: 100px;
+  font-size: 0.77rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: inherit;
+}
+
+.preset-btn:hover {
+  border-color: var(--hairline);
+  color: var(--text-primary);
+  background: var(--hover-tint);
+}
+
+.preset-btn.active {
+  background: rgba(77, 132, 255, 0.13);
+  border-color: rgba(77, 132, 255, 0.55);
+  color: var(--accent-dim);
+}
+
+/* ─── Aspect-ratio chips ──────────────────────────────────── */
+.ratio-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ratio-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 9px 4px 8px;
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: var(--transition);
+}
+
+.ratio-btn:hover {
+  border-color: var(--hairline);
+  color: var(--text-primary);
+  background: var(--hover-tint);
+}
+
+.ratio-btn.active {
+  background: rgba(77, 132, 255, 0.13);
+  border-color: rgba(77, 132, 255, 0.55);
+  color: var(--accent-dim);
+}
+
+.ratio-icon {
+  display: block;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  opacity: 0.9;
+}
+
+.ratio-icon[data-shape="9-16"] {
+  width: 11px;
+  height: 18px;
+}
+
+.ratio-icon[data-shape="4-5"] {
+  width: 14px;
+  height: 17px;
+}
+
+.ratio-icon[data-shape="1-1"] {
+  width: 16px;
+  height: 16px;
+}
+
+.ratio-icon[data-shape="16-9"] {
+  width: 20px;
+  height: 11px;
+}
+
+.ratio-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.ratio-sub {
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* ─── Sliders ─────────────────────────────────────────────────── */
+.slider-container {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.slider-label {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+#story-opacity-control[hidden] {
+  display: none;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 5px;
+  background: rgba(28, 25, 64, 0.1);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--accent);
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: 0 1px 4px rgba(20, 67, 173, 0.28);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 5px rgba(57, 121, 255, 0.16), 0 1px 4px rgba(20, 67, 173, 0.28);
+}
+
+/* ─── File Upload ────────────────────────────────────────────── */
+/* display:flex (labels are inline by default — that fragmented the dashed
+   border around block children). Flex guarantees the icon + text stack
+   stays inside the border on every browser. */
+.upload-zone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 92px;
+  background: var(--surface-input);
+  border: 1.5px dashed var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 16px 12px;
+  text-align: center;
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.upload-zone:hover {
+  border-color: rgba(77, 132, 255, 0.5);
+  background: rgba(77, 132, 255, 0.05);
+}
+
+.upload-zone.is-dragover,
+.upload-zone:focus-visible {
+  border-color: rgba(57, 121, 255, 0.7);
+  background: rgba(57, 121, 255, 0.08);
+  box-shadow: 0 0 0 4px rgba(57, 121, 255, 0.12);
+}
+
+.upload-zone:hover .upload-icon {
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.upload-zone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.upload-icon {
+  color: var(--text-muted);
+  transition: var(--transition);
+  pointer-events: none;
+}
+
+.upload-text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  pointer-events: none;
+  font-weight: 500;
+}
+
+.upload-text em {
+  font-style: normal;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.upload-hint {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  pointer-events: none;
+  letter-spacing: 0.02em;
+}
+
+.upload-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.upload-action-btn {
+  min-height: 36px;
+  padding: 0 14px;
+}
+
+.upload-shortcut {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+/* ─── Stock Grid ─────────────────────────────────────────────── */
+.stock-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.stock-item {
+  aspect-ratio: 3/4;
+  border-radius: var(--radius-sm);
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: var(--transition);
+}
+
+.stock-item:hover {
+  transform: scale(1.04);
+  border-color: var(--hairline);
+}
+
+.stock-item.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(77, 132, 255, 0.28);
+}
+
+/* ─── Color Picker ───────────────────────────────────────────── */
+.color-picker-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--hairline);
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  overflow: hidden;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.color-circle:hover {
+  transform: scale(1.1);
+  border-color: var(--hairline);
+}
+
+.color-circle input[type="color"] {
+  width: 200%;
+  height: 200%;
+  border: none;
+  padding: 0;
+  margin: -50%;
+  cursor: pointer;
+}
+
+.color-hex {
+  font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  background: var(--surface-input);
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  letter-spacing: 0.05em;
+}
+
+/* ─── Preview panel ──────────────────────────────────────────── */
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.preview-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.preview-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-mode-toggle {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--surface-input);
+  border: 1px solid var(--border-color);
+}
+
+.preview-mode-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 600 0.72rem/1 'Inter', sans-serif;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: var(--transition);
+  letter-spacing: 0.01em;
+}
+
+.preview-mode-btn:hover {
+  color: var(--text-primary);
+}
+
+.preview-mode-btn.active {
+  background: rgba(77, 132, 255, 0.18);
+  color: var(--accent-dim);
+  box-shadow: 0 0 0 1px rgba(77, 132, 255, 0.35);
+}
+
+/* Save draft — sized down to sit on the header line beside the pixel badge,
+   rather than at the weight of the per-card Download buttons. */
+.preview-save {
+  padding: 6px 11px;
+  font-size: 0.74rem;
+  border-radius: 7px;
+}
+
+/* Unsaved changes. Amber rather than red: nothing is wrong, there is just
+   something in the tab that is not in the library yet. */
+.preview-save.is-dirty {
+  color: #b8860b;
+  border-color: rgba(217, 164, 6, 0.45);
+  background: rgba(217, 164, 6, 0.12);
+}
+
+.preview-save.is-saved {
+  color: var(--accent-dim, #3979ff);
+  border-color: rgba(57, 121, 255, 0.4);
+  background: rgba(57, 121, 255, 0.1);
+}
+
+.preview-save.is-error {
+  color: #d64545;
+  border-color: rgba(214, 69, 69, 0.4);
+  background: rgba(214, 69, 69, 0.08);
+}
+
+/* Sits beside Save at the same weight — starting the next story is a normal
+   step in the writer's day, not a warning. */
+.preview-new {
+  padding: 6px 11px;
+  font-size: 0.74rem;
+  border-radius: 7px;
+}
+
+.preview-pixels {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  background: var(--surface-input);
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border-color);
+  letter-spacing: 0.03em;
+}
+
+/* Soft neutral stage — the dark poster pops against a light lavender well */
+.canvas-container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background:
+    radial-gradient(ellipse 65% 55% at 50% 40%, rgba(57, 121, 255, 0.06) 0%, transparent 70%),
+    linear-gradient(180deg, #efeefa 0%, #e6e3f4 100%);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--hairline-2);
+  box-shadow: inset 0 1px 6px rgba(28, 25, 64, 0.06);
+  overflow: hidden;
+  padding: 20px;
+}
+
+canvas {
+  /* Canvas keeps its intrinsic aspect ratio from the width/height attributes
+     (which we update on every aspect-ratio change). The browser auto-fits it
+     into the container as long as we set explicit max-width/max-height. */
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 20px 48px rgba(28, 25, 64, 0.28), 0 0 0 1px rgba(28, 25, 64, 0.08);
+  cursor: grab;
+}
+
+canvas.dragging {
+  cursor: grabbing;
+}
+
+/* ─── Export block — one primary action, two secondary variants ── */
+.download-wrap {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-export {
+  width: 100%;
+}
+
+.export-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* Quiet secondary buttons — outline only, no competing fills */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 14px;
+  background: var(--hover-tint);
+  color: var(--text-secondary);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: var(--transition);
+  letter-spacing: -0.005em;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--hover-tint);
+  border-color: var(--hairline);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-ghost .x-glyph {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.btn-ghost svg {
+  opacity: 0.75;
+}
+
+#x-download-status a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+#x-download-status {
+  margin-top: 2px;
+  min-height: 1em;
+  text-align: center;
+}
+
+.publish-panel {
+  flex-shrink: 0;
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--hairline);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.16) 100%),
+    var(--surface-elevated);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.publish-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.publish-panel-head h3 {
+  margin: 2px 0 0;
+  font-size: 1rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.publish-kicker {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent-dim);
+}
+
+.publish-refresh {
+  min-height: 0;
+  width: auto;
+  padding: 8px 12px;
+  font-size: 0.76rem;
+  flex: 0 0 auto;
+}
+
+.publish-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.publish-media {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-input);
+}
+
+.publish-media-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.publish-media-head .helper-text {
+  margin: 3px 0 0;
+}
+
+.publish-mode {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.publish-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.publish-media-slot {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  min-width: 0;
+  min-height: 112px;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px dashed var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  transition: border-color 180ms ease, transform 180ms ease, background 180ms ease;
+}
+
+.publish-media-slot:has(input:focus-visible),
+.publish-media-slot:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+
+.publish-media-slot.has-file {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--hairline));
+}
+
+.publish-media-number {
+  color: var(--accent-dim);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.publish-media-name {
+  display: block;
+  margin: 8px 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.publish-media-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 0.68rem;
+}
+
+.publish-media-remove {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--hover-tint);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.publish-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.publish-help {
+  margin: 0;
+}
+
+.publish-submit {
+  width: 100%;
+}
+
+/* ─── Utilities ──────────────────────────────────────────────── */
+.hidden {
+  display: none !important;
+}
+
+.status-text {
+  font-size: 0.76rem;
+  margin-top: 9px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.status-text.success {
+  color: var(--green);
+}
+
+.status-text.error {
+  color: var(--red);
+}
+
+.helper-text {
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  display: block;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+/* ─── Navbar view switcher (Poster | Article) ─────────────── */
+.view-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  background: var(--surface-input);
+  border: 1px solid var(--border-color);
+  border-radius: 100px;
+  padding: 3px;
+}
+
+.view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border: 0;
+  border-radius: 100px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.view-tab svg {
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.view-tab.active svg {
+  opacity: 1;
+}
+
+.view-tab:hover {
+  color: var(--text-primary);
+}
+
+.view-tab.active {
+  background: linear-gradient(135deg, rgba(77, 132, 255, 0.28), rgba(80, 80, 230, 0.18));
+  color: var(--accent-dim);
+  box-shadow: 0 0 0 1px rgba(77, 132, 255, 0.32);
+}
+
+/* Hide poster chrome when the Article view is active */
+body.view-article .app-shell,
+body.view-article .fab,
+body.view-article .sheet-backdrop,
+body.view-article .edit-sheet {
+  display: none !important;
+}
+
+body.view-review .app-shell,
+body.view-review .fab,
+body.view-review .sheet-backdrop,
+body.view-review .edit-sheet {
+  display: none !important;
+}
+
+body.view-analytics .app-shell,
+body.view-analytics .fab,
+body.view-analytics .sheet-backdrop,
+body.view-analytics .edit-sheet {
+  display: none !important;
+}
+
+/* Writers was missing from this list, so opening it left the poster editor on
+   screen and rendered the roster ~1700px BELOW it. Clicking the tab looked
+   like it did nothing — the page had simply not moved. */
+body.view-writers .app-shell,
+body.view-writers .fab,
+body.view-writers .sheet-backdrop,
+body.view-writers .edit-sheet {
+  display: none !important;
+}
+
+/* ─── QA review page ──────────────────────────────────────── */
+
+.review-shell {
+  width: min(940px, 100vw - 32px);
+  margin: 28px auto 60px;
+}
+
+.review-panel {
+  padding: 32px 30px 34px;
+}
+
+.review-intro {
+  margin-bottom: 20px;
+}
+
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.review-filters {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--surface-input);
+  border: 1px solid var(--border-color);
+}
+
+.review-filter {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.review-filter.active {
+  background: rgba(77, 132, 255, 0.18);
+  color: var(--accent-dim);
+  box-shadow: 0 0 0 1px rgba(77, 132, 255, 0.35);
+}
+
+.review-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.review-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  /* Grid items default to min-width:auto, so without this the row refuses to
+     shrink below its content and the Delete button hangs past the panel. */
+  min-width: 0;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline);
+  background: var(--hover-tint);
+}
+
+/* An approved post is the exception in a review queue, so it gets the colour
+   and everything else stays quiet. */
+.review-item.is-approved {
+  border-color: rgba(16, 152, 110, 0.35);
+  background: rgba(16, 152, 110, 0.07);
+}
+
+.review-item.is-rejected {
+  border-color: rgba(220, 38, 38, 0.32);
+  background: rgba(220, 38, 38, 0.06);
+}
+
+.review-thumb {
+  width: 46px;
+  height: 62px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+}
+
+.review-item-main {
+  flex: 1 1 200px;
+  min-width: 200px;
+}
+
+.review-item-title {
+  display: block;
+  font-weight: 600;
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-item-meta {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.review-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.review-item-actions .btn-ghost {
+  padding: 8px 13px;
+  font-size: 0.78rem;
+}
+
+.btn-reject {
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  color: #dc2626 !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+  font-weight: 600;
+  transition: all var(--base) var(--ease-out);
+}
+
+.btn-reject:hover:not(:disabled) {
+  border-color: #ef4444 !important;
+  color: #b91c1c !important;
+  background: rgba(239, 68, 68, 0.18) !important;
+}
+
+:root[data-theme="dark"] .btn-reject {
+  border-color: rgba(251, 113, 133, 0.45) !important;
+  color: #fb7185 !important;
+  background: rgba(251, 113, 133, 0.14) !important;
+}
+
+:root[data-theme="dark"] .btn-reject:hover:not(:disabled) {
+  border-color: #fb7185 !important;
+  color: #ffffff !important;
+  background: rgba(251, 113, 133, 0.32) !important;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--surface-input);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.status-pill.is-approved {
+  background: rgba(16, 152, 110, 0.14);
+  color: #10986e;
+  border-color: rgba(16, 152, 110, 0.32);
+}
+
+.status-pill.is-rejected {
+  background: rgba(220, 38, 38, 0.14);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.32);
+}
+
+.review-empty {
+  padding: 30px 4px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 620px) {
+  .review-item {
+    flex-wrap: wrap;
+  }
+
+  .review-item-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .analytics-hero,
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-card-note {
+    display: none;
+  }
+}
+
+/* ─── Article writer view ─────────────────────────────────── */
+.article-shell {
+  width: min(760px, 100vw - 32px);
+  margin: 28px auto 60px;
+}
+
+.analytics-shell {
+  width: min(1120px, calc(100vw - 32px));
+  margin: 28px auto 60px;
+}
+
+.analytics-panel {
+  padding: 32px 30px 34px;
+}
+
+.analytics-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+/* Keep retired analytics hero copy hidden if stale HTML is paired with new CSS. */
+.analytics-kicker,
+#analytics-title,
+#analytics-desc {
+  display: none !important;
+}
+
+.analytics-hero {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.analytics-stat-card {
+  position: relative;
+  overflow: hidden;
+  padding: 18px 18px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.2) 0%, transparent 42%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 18px 42px rgba(22, 23, 55, 0.12);
+  transform: translateY(18px);
+  opacity: 0;
+  animation: analytics-card-in 0.55s var(--spring) forwards;
+}
+
+.analytics-stat-card:nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.analytics-stat-card:nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.analytics-stat-card:nth-child(4) {
+  animation-delay: 0.15s;
+}
+
+.analytics-stat-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -30px -30px auto;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  filter: blur(2px);
+}
+
+.analytics-stat-card.accent-a {
+  background-color: rgba(61, 119, 245, 0.12);
+}
+
+.analytics-stat-card.accent-b {
+  background-color: rgba(16, 152, 110, 0.12);
+}
+
+.analytics-stat-card.accent-c {
+  background-color: rgba(246, 168, 59, 0.14);
+}
+
+.analytics-stat-card.accent-d {
+  background-color: rgba(164, 108, 255, 0.12);
+}
+
+.analytics-stat-label {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--analytics-faint);
+}
+
+.analytics-stat-value {
+  display: block;
+  margin-top: 10px;
+  font-size: clamp(2rem, 3.4vw, 2.8rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  color: var(--text-primary);
+}
+
+.analytics-stat-sub {
+  display: block;
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.analytics-today-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(210px, 0.72fr) minmax(0, 1.8fr);
+  align-items: center;
+  gap: 22px;
+  margin-top: 14px;
+  padding: 20px 22px;
+  border: 1px solid var(--hairline);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(34, 211, 238, 0.12), transparent 34%),
+    linear-gradient(135deg, var(--surface-card), var(--surface-input));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 16px 42px rgba(22, 23, 55, 0.08);
+  opacity: 0;
+  transform: translateY(14px);
+  animation: analytics-card-in 0.55s 0.18s var(--spring) forwards;
+}
+
+.analytics-today-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--iris), var(--accent));
+}
+
+.analytics-today-intro {
+  min-width: 0;
+}
+
+.analytics-today-kicker-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 7px;
+}
+
+.analytics-today-kicker-row .analytics-card-label {
+  margin: 0;
+}
+
+.analytics-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid rgba(16, 152, 110, 0.28);
+  border-radius: 999px;
+  background: rgba(16, 152, 110, 0.1);
+  color: #10986e;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analytics-live-badge>span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(16, 152, 110, 0.1);
+}
+
+.analytics-today-intro h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.18rem;
+  letter-spacing: -0.03em;
+}
+
+.analytics-today-intro p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.analytics-today-intro .analytics-reset-note {
+  color: var(--analytics-faint);
+  font-size: 0.7rem;
+}
+
+.analytics-today-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.analytics-today-metric {
+  min-width: 0;
+  padding: 4px 18px;
+  border-left: 1px solid var(--hairline);
+}
+
+.analytics-today-metric>span,
+.analytics-today-metric>small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.analytics-today-metric>span {
+  color: var(--analytics-faint);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.analytics-today-metric>strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--text-primary);
+  font-size: clamp(1.7rem, 3vw, 2.35rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.analytics-today-metric>small {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.analytics-today-metric.tone-approved>strong {
+  color: #10986e;
+}
+
+.analytics-today-metric.tone-rejected>strong {
+  color: #dc5262;
+}
+
+.analytics-today-metric.tone-pending>strong {
+  color: #d88a16;
+}
+
+@media (max-width: 760px) {
+  .analytics-today-card {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .analytics-today-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analytics-today-metric {
+    padding: 12px 14px;
+  }
+
+  .analytics-today-metric:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .analytics-today-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--hairline);
+  }
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+/* Each of these holds a single card now — the trend chart and the two
+   leaderboards are gone — and the default two-track grid would strand a lone
+   card in the narrow right-hand column. */
+.analytics-meta-grid,
+.analytics-board-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.analytics-card {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid var(--hairline);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08)),
+    var(--surface-card);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.analytics-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.analytics-card-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--analytics-faint);
+}
+
+.analytics-card h3 {
+  margin: 0;
+  font-size: 1.08rem;
+  letter-spacing: -0.02em;
+}
+
+.analytics-card-note {
+  font-size: 0.76rem;
+  color: var(--analytics-faint);
+  background: var(--surface-input);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 5px 10px;
+}
+
+.analytics-metric-list {
+  display: grid;
+  gap: 10px;
+}
+
+.analytics-metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-input);
+}
+
+.analytics-metric-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.analytics-metric-value {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.analytics-leaderboard {
+  display: grid;
+  gap: 10px;
+}
+
+.analytics-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--hairline);
+  background: var(--hover-tint);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.analytics-row:hover {
+  transform: translateY(-1px);
+  border-color: rgba(77, 132, 255, 0.28);
+}
+
+.analytics-rank {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(77, 132, 255, 0.14);
+  color: var(--accent-dim);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.analytics-row-main {
+  min-width: 0;
+}
+
+.analytics-row-name {
+  display: block;
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.analytics-row-meta {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.analytics-row-value {
+  text-align: right;
+}
+
+.analytics-row-total {
+  display: block;
+  font-weight: 800;
+  font-size: 0.96rem;
+}
+
+.analytics-row-rate {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* ─── Content writer roster (expandable) ──────────────────── */
+.analytics-roster-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.analytics-roster-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* The card clips to keep its rounded corners, which would also slice the open
+   menu off at the card edge. Released only while the menu is up. */
+.analytics-roster-card:has(.analytics-select-menu.is-open) {
+  overflow: visible;
+}
+
+.analytics-roster-head {
+  margin: 0;
+  padding: 18px;
+  align-items: center;
+}
+
+.analytics-roster-desc {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--analytics-faint);
+}
+
+.analytics-roster-cue {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  font-size: 0.76rem;
+  color: var(--analytics-faint);
+}
+
+.analytics-roster-modes {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-input);
+}
+
+.analytics-roster-mode {
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--analytics-faint);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.analytics-roster-mode.is-active {
+  color: #fff;
+  background: rgba(155, 114, 239, 0.55);
+}
+
+.analytics-roster-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--analytics-faint);
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.analytics-roster-expand:hover,
+.analytics-roster-expand:focus-visible {
+  outline: none;
+  border-color: var(--hairline);
+  background: var(--hover-tint);
+  color: var(--text-primary);
+}
+
+.analytics-roster-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.25s var(--spring);
+}
+
+.analytics-roster-expand[aria-expanded="true"] .analytics-roster-chevron {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.analytics-roster-body {
+  padding: 0 18px 18px;
+  animation: analytics-card-in 0.35s var(--spring) forwards;
+}
+
+.analytics-roster-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* Frosted-glass shells, matching the blur/saturate pairing the nav and panels
+   already use. The tint is the page's own blue rather than plain white, so
+   the controls read as part of the card instead of sitting on top of it. */
+.analytics-roster-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-edge);
+  background-color: var(--glass-fill);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: var(--glass-shadow);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--analytics-faint);
+}
+
+.analytics-roster-filter input[type="date"] {
+  font: inherit;
+  font-weight: 700;
+  color: var(--text-primary);
+  /* Longhand, and transitioned as a longhand: a `background` shorthand holding
+     a var() becomes a pending-substitution value, and a theme flip mid-
+     transition then leaves the control stuck on the outgoing colour. */
+  background-color: var(--glass-inner);
+  border: 1px solid var(--glass-edge-strong);
+  border-radius: 999px;
+  padding: 5px 12px;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.analytics-roster-filter input[type="date"]:hover {
+  border-color: var(--accent);
+}
+
+.analytics-roster-filter input[type="date"]:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+:root[data-theme="dark"] .analytics-roster-filter input[type="date"] {
+  color-scheme: dark;
+}
+
+/* ── Category listbox ──
+   A custom control because the three things asked of it — a translucent blue
+   fill, an unhurried open, and its own scrollbar — are all off-limits on a
+   native <select> popup. */
+.analytics-select {
+  position: relative;
+}
+
+.analytics-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 160px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text-primary);
+  background-color: var(--glass-inner);
+  border: 1px solid var(--glass-edge-strong);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  transition: border-color 0.35s ease, background-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+.analytics-select-trigger:hover {
+  border-color: var(--accent);
+}
+
+.analytics-select-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.analytics-select-chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.35s var(--spring);
+}
+
+.analytics-select-trigger[aria-expanded="true"] .analytics-select-chevron {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.analytics-select-menu {
+  position: absolute;
+  /* Below the trigger, never over it — the gap is what keeps the current
+     selection readable while the list is open. */
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  min-width: 100%;
+  /* A closed menu is only invisible, so it still counts toward the page's
+     scroll height. Uncapped, a long writer/category list pushed the document
+     past .cms-layout and the sticky sidebar scrolled away with it. */
+  max-height: min(320px, 50vh);
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 18px;
+  border: 1px solid var(--glass-edge-strong);
+  background-color: var(--glass-menu);
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  box-shadow: var(--glass-shadow);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px) scale(0.97);
+  transform-origin: top center;
+  /* Deliberately unhurried. Visibility is held until the fade finishes so the
+     menu cannot be clicked on its way out. */
+  transition: opacity 0.42s ease, transform 0.42s var(--spring), visibility 0s linear 0.42s;
+}
+
+.analytics-select-menu.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.42s ease, transform 0.42s var(--spring), visibility 0s;
+}
+
+.analytics-select-option {
+  padding: 9px 14px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+.analytics-select-option:hover,
+.analytics-select-option:focus-visible {
+  outline: none;
+  color: var(--text-primary);
+  background-color: var(--glass-inner);
+}
+
+.analytics-select-option[aria-selected="true"] {
+  color: var(--text-primary);
+  background-color: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--glass-edge-strong);
+}
+
+/* The scrollbar is part of the glass rather than a system artefact sitting on
+   top of it. */
+.analytics-select-menu {
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-edge-strong) transparent;
+}
+
+.analytics-select-menu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.analytics-select-menu::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 6px 0;
+}
+
+.analytics-select-menu::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background-color: var(--glass-edge-strong);
+}
+
+.analytics-select-menu::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
+}
+
+/* The native picker indicator is near-black by default, which vanishes on the
+   dark card. */
+:root[data-theme="dark"] .analytics-roster-filter input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.7);
+}
+
+.analytics-roster-sorts {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-input);
+}
+
+.analytics-roster-sort {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--analytics-faint);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.analytics-roster-sort.is-active {
+  color: var(--text-primary, #fff);
+  background: var(--hover-tint);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+/* avatar · name · today · week · sent · approved · rejected · pending · rate.
+   The tracks live on the list, not on the rows, so the heading row and every
+   data row are measured together: a track is as wide as the widest thing in
+   that column, whether that is a heading or a figure. The numeric tracks floor
+   at max-content so a two-word heading like "Total sent" keeps its column wide
+   enough to stay on one line. */
+.analytics-roster-list {
+  display: grid;
+  grid-template-columns: 34px minmax(90px, 1fr) repeat(7, minmax(max-content, 90px));
+  /* The column gap belongs to the list too — a subgrid that declares its own
+     would resolve different track positions and undo the alignment. */
+  row-gap: 8px;
+  column-gap: 14px;
+}
+
+.roster-row {
+  display: grid;
+  /* Rows sized independently would each resolve max-content against their own
+     contents, so a heading and the figure beneath it would land on different
+     centres. Subgrid makes every row adopt the list's tracks instead. */
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--hairline);
+  background: var(--hover-tint);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+/* Without subgrid the rows would have no tracks at all, so they fall back to
+   the fixed list — alignment is then approximate but the table still reads. */
+@supports not (grid-template-columns: subgrid) {
+  .analytics-roster-list {
+    display: block;
+  }
+
+  .roster-row {
+    grid-template-columns: 34px minmax(90px, 1fr) repeat(7, minmax(0, 106px));
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+}
+
+.roster-row:hover {
+  transform: translateY(-1px);
+  border-color: rgba(155, 114, 239, 0.28);
+}
+
+/* Column headings: the one row that is labels rather than data, so it drops the
+   card styling and the hover lift. */
+.roster-head-row,
+.roster-head-row:hover {
+  padding: 0 16px 2px;
+  white-space: nowrap;
+  border-color: transparent;
+  background: none;
+  transform: none;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--analytics-faint);
+}
+
+.roster-avatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(155, 114, 239, 0.16);
+  color: var(--accent-dim);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.roster-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tabular figures so the columns stay aligned digit-for-digit. Centred rather
+   than right-aligned so each value sits under the middle of its own heading. */
+.roster-cell {
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.roster-row .roster-today {
+  color: var(--iris);
+}
+
+.roster-row .roster-sent {
+  color: var(--text-primary);
+}
+
+.roster-row .roster-approved {
+  color: #34d399;
+}
+
+.roster-row .roster-rejected {
+  color: #f87171;
+}
+
+.roster-row .roster-awaiting {
+  color: #fbbf24;
+}
+
+/* Neutral on purpose: it restates the green column as a ratio, and colouring it
+   green too would double-count the same signal. */
+.roster-row .roster-rate {
+  color: var(--text-primary);
+}
+
+@media (max-width: 720px) {
+
+  /* The mode switch is the one control that has to survive — the row count is
+     restated by the list itself. */
+  #analytics-roster-count {
+    display: none;
+  }
+
+  /* Headings stay on one line at every width, so past a certain narrowness the
+     table scrolls sideways rather than folding its own column names in half.
+     Tracks stay on the list so the rows' subgrid still matches them. */
+  .analytics-roster-list {
+    overflow-x: auto;
+    grid-template-columns: 34px minmax(80px, 1fr) repeat(7, minmax(max-content, auto));
+    column-gap: 8px;
+  }
+
+  .analytics-roster-dates {
+    flex-wrap: wrap;
+  }
+
+  .roster-cell {
+    font-size: 0.85rem;
+  }
+}
+
+.analytics-empty {
+  padding: 24px 10px;
+  text-align: center;
+  color: var(--text-muted);
+  border-radius: 18px;
+  border: 1px dashed var(--hairline);
+  background: var(--surface-input);
+}
+
+.article-panel {
+  padding: 32px 30px 34px;
+}
+
+.article-intro {
+  margin-bottom: 6px;
+}
+
+.article-intro .btn-primary {
+  margin-top: 18px;
+  max-width: 320px;
+}
+
+.article-result {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: article-in 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* display:flex above would defeat the hidden attribute — restore it */
+.article-result[hidden] {
+  display: none;
+}
+
+@keyframes article-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.article-block {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px 16px;
+}
+
+.article-block-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.article-block-label {
+  flex: 1;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.char-count {
+  font-family: monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--surface-input);
+  border: 1px solid var(--border-color);
+  padding: 2px 8px;
+  border-radius: 100px;
+}
+
+.char-count.over {
+  color: var(--red);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.copy-btn {
+  padding: 5px 12px;
+  border-radius: 100px;
+  border: 1px solid var(--hairline);
+  background: var(--hover-tint);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.copy-btn:hover {
+  color: var(--text-primary);
+  background: var(--hover-tint);
+}
+
+.copy-btn.copied {
+  color: var(--green);
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.article-headline {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+
+.article-bullets {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.article-bullets li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.article-bullets li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.article-tweet {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.article-flags {
+  border-color: rgba(248, 113, 113, 0.25);
+}
+
+.article-flags .article-bullets li::before {
+  background: var(--red);
+}
+
+.article-flags .article-bullets li {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+/* ── Article (Text) page typography ──────────────────────────────
+   The editorial copy uses Poppins at a heavier weight than the tool's
+   Inter UI — a distinct, sturdier voice for the written article.
+   Scoped to #article-view so the Poster page is untouched. */
+#article-view {
+  font-family: var(--font-display);
+}
+
+#article-view .article-intro .desc {
+  font-weight: 500;
+}
+
+#article-view .article-headline {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.28;
+}
+
+#article-view .article-bullets li {
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+#article-view .article-tweet {
+  font-weight: 500;
+}
+
+#article-view .article-block-label {
+  font-weight: 700;
+}
+
+#article-view .copy-btn,
+#article-view .btn-secondary {
+  font-weight: 600;
+}
+
+/* ─── AI Enhance button (gpt-image-1) ─────────────────────── */
+.btn-ai {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(77, 132, 255, 0.16), rgba(80, 80, 230, 0.1));
+  border: 1px solid rgba(77, 132, 255, 0.4);
+  border-radius: var(--radius-md);
+  color: var(--accent-dim);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-ai:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(77, 132, 255, 0.26), rgba(80, 80, 230, 0.18));
+  border-color: rgba(77, 132, 255, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-ai:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-ai.working .ai-spark {
+  animation: spark-spin 1s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spark-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Mobile bottom-sheet system ─────────────────────────────
+   Desktop: .edit-sheet is invisible to layout (display:contents),
+   .fab and .sheet-backdrop are fully hidden.
+   Mobile:  see the @media block — sheet slides up from the bottom,
+   backdrop dims the rest, FAB toggles open/close.
+*/
+.edit-sheet {
+  display: contents;
+}
+
+.sheet-handle {
+  display: none;
+}
+
+.fab,
+.sheet-backdrop {
+  display: none;
+}
+
+/* ─── Responsive ─────────────────────────────────────────────── */
+
+/* Tablet — controls + image panels collapse into the left column,
+   preview spans the right side across both rows. */
+@media (max-width: 1100px) {
+  .app-shell {
+    /* Same rebalance as desktop: the left column stacks BOTH the controls
+       and the image panel, so pinning it to 270px while the preview took
+       every remaining pixel was the worst split of the three. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    grid-template-rows: auto auto;
+    gap: 14px;
+  }
+
+  .controls-panel {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .image-panel {
+    grid-column: 1;
+    grid-row: 2;
+    position: static;
+    max-height: none;
+  }
+
+  .preview-panel {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+}
+
+/* Mobile — single column, preview at top, controls below.
+   Putting the preview first matches user expectation: see the result,
+   then scroll to edit. */
+@media (max-width: 760px) {
+  body {
+    /* Allow mobile browsers' native pull-to-refresh and clean scrolling */
+    overflow-x: hidden;
+  }
+
+  .app-nav {
+    height: 50px;
+    padding: 0;
+  }
+
+  /* Match the mobile .app-shell gutter (100vw - 14px) so the logo sits
+     directly above the poster card's left edge. */
+  .nav-inner {
+    width: calc(100vw - 14px);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .nav-logo {
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+    gap: 8px;
+  }
+
+  .nav-logo-mark {
+    width: 26px;
+    height: 26px;
+    font-size: 0.68rem;
+  }
+
+  /* Tight navbar: drop the wordmark + badge so the view tabs fit */
+  .nav-logo-text {
+    display: none;
+  }
+
+  .nav-badge {
+    display: none;
+  }
+
+  /* Trim the tab pill and keep the account controls compact on phones. */
+  .view-tab {
+    padding: 6px 11px;
+    font-size: 0.75rem;
+  }
+
+  .view-tabs {
+    min-width: 0;
+    flex: 1 1 auto;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .view-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-actions {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .nav-link {
+    display: none;
+  }
+
+  .nav-session {
+    max-width: none;
+    padding: 3px 4px;
+  }
+
+  .nav-account {
+    display: none;
+  }
+
+  .nav-account-label {
+    display: none;
+  }
+
+  .nav-account-name {
+    font-size: 0.72rem;
+  }
+
+  .nav-logout {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 0.72rem;
+  }
+
+  /* Article view on mobile */
+  .article-shell {
+    width: calc(100vw - 20px);
+    margin: 12px auto 40px;
+  }
+
+  .article-panel {
+    padding: 20px 16px 24px;
+  }
+
+  .article-intro h1 {
+    font-size: 1.45rem;
+  }
+
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    gap: 0;
+    width: calc(100vw - 14px);
+    margin: 8px auto calc(18px + env(safe-area-inset-bottom));
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Only the preview is in the document flow on mobile — the editor
+     panels move into the bottom sheet and only show when the FAB is tapped. */
+  .preview-panel {
+    grid-column: 1;
+    grid-row: 1;
+    order: 1;
+  }
+
+  /* PREVIEW takes the full visible area above the action bar */
+  .preview-panel {
+    position: static;
+    z-index: 20;
+    padding: 12px;
+    height: auto;
+    max-height: none;
+  }
+
+  .preview-header {
+    margin-bottom: 10px;
+  }
+
+  .preview-title {
+    font-size: 0.85rem;
+  }
+
+  .preview-header-actions {
+    gap: 6px;
+  }
+
+  .preview-mode-btn {
+    font-size: 0.62rem;
+    padding: 5px 8px;
+  }
+
+  .preview-pixels {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+  }
+
+  .canvas-container {
+    padding: 10px;
+    max-height: calc(100dvh - 50px - 152px - env(safe-area-inset-bottom));
+    border-radius: 14px;
+  }
+
+  canvas {
+    max-height: calc(100dvh - 50px - 172px - env(safe-area-inset-bottom));
+    border-radius: 10px;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+
+  /* ─── Bottom sheet (controls + image panels, hidden until FAB tap) ─── */
+  .edit-sheet {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 80;
+    max-height: 88vh;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    border-top: 1px solid var(--hairline);
+    border-radius: 22px 22px 0 0;
+    box-shadow: 0 -16px 44px rgba(28, 25, 64, 0.18);
+    padding-bottom: env(safe-area-inset-bottom);
+    /* Slide off-screen by default */
+    transform: translateY(102%);
+    transition: transform 0.36s cubic-bezier(0.32, 0.72, 0, 1);
+    pointer-events: none;
+  }
+
+  body.sheet-open .edit-sheet {
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  /* Sheet header bar — drag pill + title + close.
+     Sticky-top inside the sheet so the close button is always reachable
+     no matter how far the user has scrolled the sheet content. */
+  .sheet-handle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 62px;
+    padding: 18px 14px 12px;
+    flex-shrink: 0;
+    position: relative;
+    touch-action: none;
+    /* let JS take full control during swipe */
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .sheet-handle:active {
+    cursor: grabbing;
+  }
+
+  .sheet-handle-pill {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 44px;
+    height: 5px;
+    background: rgba(28, 25, 64, 0.18);
+    border-radius: 100px;
+    transition: background 0.2s, transform 0.2s;
+  }
+
+  .sheet-handle:active .sheet-handle-pill {
+    background: rgba(28, 25, 64, 0.34);
+    transform: translateX(-50%) scaleY(1.4);
+  }
+
+  .sheet-title {
+    margin-left: 2px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    padding-right: 54px;
+  }
+
+  .sheet-close {
+    position: absolute;
+    top: 12px;
+    right: max(14px, env(safe-area-inset-right));
+    z-index: 4;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--hairline);
+    background: var(--surface-input);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition);
+    flex-shrink: 0;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .sheet-close:active {
+    transform: scale(0.92);
+  }
+
+  .sheet-close:hover {
+    color: var(--text-primary);
+    background: var(--press-tint);
+  }
+
+  .sheet-close svg {
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+  }
+
+  /* Editor panels lose their card styling inside the sheet — sheet IS the card */
+  .edit-sheet .glass-panel {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-radius: 0;
+    padding: 4px 16px;
+  }
+
+  .edit-sheet .controls-panel,
+  .edit-sheet .image-panel {
+    overflow: visible;
+  }
+
+  /* The two panels stack and scroll TOGETHER inside the sheet */
+  .edit-sheet>.controls-panel,
+  .edit-sheet>.image-panel {
+    flex: 0 0 auto;
+  }
+
+  .edit-sheet {
+    /* Make the inner area scrollable */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .edit-sheet>.sheet-handle {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 10px;
+  }
+
+  /* Hide the controls-panel header copy on mobile (h1 + desc) — not needed in
+     the sheet. Mode tabs + form still show. */
+  .edit-sheet .panel-copy {
+    display: none;
+  }
+
+  .edit-sheet .panel-title {
+    display: none;
+  }
+
+  h1 {
+    font-size: 1.45rem;
+    line-height: 1.14;
+  }
+
+  p.desc {
+    font-size: 0.82rem;
+    max-width: 100%;
+    margin-bottom: 8px;
+  }
+
+  /* ─── Floating Action Button (FAB) ─── */
+  .fab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: 16px;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    z-index: 70;
+    width: 54px;
+    height: 54px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent) 0%, #1443ad 100%);
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 10px 28px rgba(77, 132, 255, 0.42), 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1),
+      box-shadow 0.25s,
+      opacity 0.2s;
+  }
+
+  .fab:active {
+    transform: scale(0.94);
+  }
+
+  body.sheet-open .fab {
+    /* Hide FAB while sheet is open — close button + backdrop are the way out */
+    transform: scale(0) rotate(180deg);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Backdrop behind the sheet */
+  .sheet-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 75;
+    background: var(--surface-input);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  body.sheet-open .sheet-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  body.sheet-open {
+    overflow: hidden;
+  }
+
+  /* ─── Download actions below preview on mobile ─── */
+  .download-wrap {
+    position: static;
+    z-index: auto;
+    margin: 10px 0 0;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-top: 0;
+  }
+
+  .download-wrap .btn-primary,
+  .download-wrap .btn-ghost {
+    margin: 0;
+    min-height: 46px;
+  }
+
+  .download-wrap #x-download-status {
+    margin: 2px 4px 0;
+    font-size: 0.72rem;
+  }
+
+  /* Accordion polish for mobile — slightly larger tap area */
+  .acc-head {
+    padding: 16px 4px;
+    font-size: 0.95rem;
+    min-height: 48px;
+  }
+
+  .acc-meta {
+    font-size: 0.7rem;
+  }
+
+  /* iOS auto-zooms text inputs whose font-size < 16px on focus.
+     Bump all form fields to 16px on mobile to suppress that. */
+  input[type="url"],
+  input[type="text"],
+  select,
+  textarea {
+    font-size: 16px;
+    padding: 12px 14px;
+  }
+
+  textarea {
+    min-height: 80px;
+  }
+
+  .publish-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .publish-media-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .publish-media-slot {
+    min-height: 96px;
+  }
+
+  /* Touch-target minimums (Apple HIG: 44px, Material: 48dp) */
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost {
+    min-height: 44px;
+    padding: 12px 18px;
+    font-size: 0.92rem;
+  }
+
+  .mode-tab {
+    min-height: 40px;
+    font-size: 0.9rem;
+  }
+
+  .preset-btn {
+    min-height: 36px;
+    padding: 8px 14px;
+    font-size: 0.85rem;
+  }
+
+  /* Bigger slider thumb for finger control */
+  input[type="range"]::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Stock grid: keep 3 columns on phones, but slightly tighter */
+  .stock-grid {
+    gap: 6px;
+  }
+
+  /* Status text shouldn't overflow on narrow screens */
+  .status-text {
+    word-break: break-word;
+  }
+}
+
+/* Small phones (≤ 380 px) — squeeze a bit more */
+@media (max-width: 380px) {
+  .app-shell {
+    width: calc(100vw - 14px);
+    gap: 10px;
+  }
+
+  .controls-panel {
+    padding: 14px 14px 16px;
+  }
+
+  .image-panel {
+    padding: 12px 14px 16px;
+  }
+
+  h1 {
+    font-size: 1.32rem;
+  }
+
+  /* Give the centered nav tabs a little more room from the side items. */
+  .nav-inner {
+    gap: 6px;
+  }
+
+  .view-tab {
+    padding: 6px 9px;
+    font-size: 0.72rem;
+  }
+
+  .nav-link {
+    display: none;
+  }
+
+  .nav-session {
+    max-width: 132px;
+    gap: 6px;
+    padding-left: 8px;
+  }
+
+  /* Three view tabs plus an account pill do not fit here. The tabs go
+     icon-only (font-size:0 hides the label text nodes, the SVGs are sized in
+     px and survive), the BETA chip goes entirely, and the side groups size to
+     their content instead of splitting the row evenly — otherwise the pill is
+     handed less width than it needs and spills over the tabs. */
+  .view-tabs {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
+  .view-tab {
+    padding: 7px 9px;
+    font-size: 0;
+    gap: 0;
+  }
+
+  .nav-badge {
+    display: none;
+  }
+
+  .nav-logo {
+    flex: 0 1 auto;
+  }
+
+  .nav-logo-text {
+    display: none;
+  }
+
+  .nav-actions {
+    flex: 0 0 auto;
+  }
+
+  /* No room for both — keep the role badge, drop the name. Which account you
+     are signed into matters more here than what it is called. */
+  .nav-session {
+    max-width: none;
+    flex-shrink: 0;
+    gap: 6px;
+    padding: 3px 4px 3px 7px;
+  }
+
+  .nav-account {
+    max-width: none;
+  }
+
+  .nav-account-name {
+    display: none;
+  }
+
+  .nav-logout {
+    padding: 0 9px;
+    font-size: 0.7rem;
+  }
+
+  .stock-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .download-wrap {
+    gap: 6px;
+  }
+
+  .canvas-container {
+    max-height: 44vh;
+  }
+
+  canvas {
+    max-height: calc(44vh - 16px);
+  }
+
+  .preview-panel {
+    top: 56px;
+  }
+}
+
+/* Touch hover suppression — `:hover` styles linger on tap on touch
+   devices, looking like the button is stuck. Disable for non-hover inputs. */
+@media (hover: none) {
+
+  .btn-primary:hover,
+  .btn-secondary:hover,
+  .btn-ghost:hover,
+  .preset-btn:hover,
+  .stock-item:hover,
+  .mode-tab:hover {
+    transform: none;
+    filter: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FINISH LAYER — display type, AI iridescence, motion, chrome
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Display face on identity + key headings */
+.nav-logo,
+.sheet-title,
+.preview-title,
+.article-headline {
+  font-family: var(--font-display);
+}
+
+/* Text selection matches the brand */
+::selection {
+  background: rgba(57, 121, 255, 0.35);
+  color: #fff;
+}
+
+/* Thin blue scrollbars everywhere (WebKit + Firefox) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(57, 121, 255, 0.28) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(57, 121, 255, 0.28);
+  border-radius: 10px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(57, 121, 255, 0.45);
+}
+
+/* ─── AI Enhance — iridescent gradient border + shimmer sweep ── */
+.btn-ai {
+  position: relative;
+  background:
+    linear-gradient(rgba(13, 13, 20, 0.92), rgba(13, 13, 20, 0.92)) padding-box,
+    linear-gradient(120deg, #3979ff, #6ea0ff 40%, #b9d0ff 80%, #3979ff) border-box;
+  border: 1px solid transparent;
+  color: #cfe0ff;
+  overflow: hidden;
+}
+
+.btn-ai::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.14) 50%, transparent 58%);
+  transform: translateX(-110%);
+  transition: transform 0.7s ease;
+  pointer-events: none;
+}
+
+.btn-ai:hover:not(:disabled) {
+  transform: translateY(-1px);
+  color: #fff;
+  box-shadow: 0 6px 22px rgba(57, 121, 255, 0.22);
+}
+
+.btn-ai:hover:not(:disabled)::before {
+  transform: translateX(110%);
+}
+
+.btn-ai .ai-spark {
+  color: var(--iris);
+}
+
+/* ─── Accordion content fades in as the row expands ── */
+.acc-inner {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.28s ease 0.08s, transform 0.28s ease 0.08s;
+}
+
+.acc[data-open="true"]>.acc-body>.acc-inner {
+  opacity: 1;
+  transform: none;
+}
+
+/* ─── View switch cross-fade (Poster ↔ Article) ── */
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.article-shell:not([hidden]),
+.review-shell:not([hidden]),
+.analytics-shell:not([hidden]) {
+  animation: view-in 0.4s var(--spring) both;
+}
+
+body.view-poster-return .app-shell {
+  animation: view-in 0.4s var(--spring) both;
+}
+
+@keyframes analytics-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ─── FAB attention pulse (mobile) — three soft rings then rest ── */
+@keyframes fab-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(57, 121, 255, 0.45);
+  }
+
+  70% {
+    box-shadow: 0 0 0 16px rgba(57, 121, 255, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(57, 121, 255, 0);
+  }
+}
+
+.fab:not(:hover) {
+  animation: fab-pulse 2.6s ease-out 1.2s 3;
+}
+
+/* ─── Inputs sharpen on focus with a soft outer bloom ── */
+input[type="url"]:focus,
+input[type="text"]:focus,
+textarea:focus {
+  box-shadow:
+    0 0 0 3px rgba(57, 121, 255, 0.14),
+    0 4px 20px rgba(57, 121, 255, 0.08);
+}
+
+/* ─── Stock thumbs get a springier hover ── */
+.stock-item {
+  transition: transform 0.22s var(--spring), border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.stock-item:hover {
+  transform: scale(1.055) rotate(0.4deg);
+}
+
+/* ─── Ratio chips pop on select ── */
+.ratio-btn {
+  transition: transform 0.2s var(--spring), background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.ratio-btn:active {
+  transform: scale(0.94);
+}
+
+.ratio-btn.active {
+  transform: translateY(-1px);
+}
+
+/* ─── Nav wordmark hover glint ── */
+.nav-logo-mark {
+  transition: transform 0.25s var(--spring), box-shadow 0.25s ease;
+}
+
+.nav-logo:hover .nav-logo-mark {
+  transform: rotate(-6deg) scale(1.06);
+  box-shadow: 0 6px 18px rgba(57, 121, 255, 0.5);
+}
+
+/* Aurora: calm it down on small screens (fill-rate) */
+@media (max-width: 760px) {
+  .aurora i {
+    filter: blur(60px);
+    opacity: 0.4;
+  }
+
+  body::after {
+    opacity: 0.35;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK THEME — default. Light stays available via the navbar toggle
+   (documentElement[data-theme] is set before paint by an inline
+   script in <head>; choice persists in localStorage "pix-theme").
+   Everything token-based flips automatically; the handful of
+   literal light values are overridden below.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] {
+  --bg-color: #080b14;
+  --surface: rgba(17, 22, 34, 0.88);
+  --surface-2: #121724;
+  --surface-solid: #161c2b;
+  --surface-input: rgba(255, 255, 255, 0.055);
+  --surface-card: rgba(255, 255, 255, 0.035);
+
+  --hairline: rgba(255, 255, 255, 0.10);
+  --hairline-2: rgba(255, 255, 255, 0.06);
+  --hover-tint: rgba(255, 255, 255, 0.05);
+  --press-tint: rgba(255, 255, 255, 0.10);
+  --sunken: rgba(0, 0, 0, 0.30);
+
+  --text-primary: #eef2fb;
+  --text-secondary: #9aa6c0;
+  --text-muted: #8b96b0;
+  /* Bright enough to clear the card fill — the muted token alone disappears on
+     dark — while still reading as the accent rather than as body text. */
+  --analytics-faint: #7f9be0;
+
+  /* On ink the glass is lit by the accent itself — a white tint would grey the
+     card out rather than sit in front of it. */
+  --glass-fill: rgba(57, 121, 255, 0.08);
+  --glass-inner: rgba(57, 121, 255, 0.14);
+  --glass-edge: rgba(57, 121, 255, 0.22);
+  --glass-edge-strong: rgba(57, 121, 255, 0.40);
+  /* The open menu sits over the card, so it needs enough body to read as glass
+     rather than as a hole punched in the page. */
+  --glass-menu: rgba(26, 40, 72, 0.86);
+  --glass-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+
+  --accent: #3979ff;
+  --accent-dim: #8cb1ff;
+  /* "readable accent" — light on dark */
+  --accent-deep: #3979ff;
+  --accent-soft: rgba(57, 121, 255, 0.16);
+  --accent-glow: rgba(57, 121, 255, 0.28);
+  --iris: #22d3ee;
+
+  --green: #34d399;
+  --green-soft: rgba(52, 211, 153, 0.14);
+  --red: #fb7185;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+}
+
+/* ── Literal light values that need explicit dark counterparts ── */
+
+:root[data-theme="dark"] .app-nav {
+  background: rgba(11, 10, 19, 0.85);
+}
+
+:root[data-theme="dark"] .glass-panel {
+  background: rgba(20, 19, 30, 0.8);
+}
+
+:root[data-theme="dark"] h1 {
+  background: linear-gradient(155deg, #ffffff 0%, #c3d8ff 55%, #3979ff 100%);
+  -webkit-background-clip: text;
+}
+
+:root[data-theme="dark"] .canvas-container {
+  background:
+    radial-gradient(ellipse 65% 55% at 50% 40%, rgba(57, 121, 255, 0.06) 0%, transparent 70%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0.4) 100%);
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme="dark"] canvas {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+:root[data-theme="dark"] input[type="range"] {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Analytics Dark Mode Overrides ── */
+:root[data-theme="dark"] .analytics-stat-card {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.08) 0%, transparent 45%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 18px 42px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="dark"] .analytics-stat-card.accent-a {
+  background-color: rgba(61, 119, 245, 0.22);
+}
+
+:root[data-theme="dark"] .analytics-stat-card.accent-b {
+  background-color: rgba(16, 152, 110, 0.22);
+}
+
+:root[data-theme="dark"] .analytics-stat-card.accent-c {
+  background-color: rgba(246, 168, 59, 0.22);
+}
+
+:root[data-theme="dark"] .analytics-stat-card.accent-d {
+  background-color: rgba(164, 108, 255, 0.22);
+}
+
+:root[data-theme="dark"] .analytics-stat-label {
+  color: #d4d0f5;
+}
+
+:root[data-theme="dark"] .analytics-stat-sub {
+  color: #c4c0e6;
+}
+
+:root[data-theme="dark"] .analytics-today-card {
+  border-color: rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(34, 211, 238, 0.11), transparent 34%),
+    linear-gradient(135deg, rgba(22, 21, 34, 0.96), rgba(14, 17, 28, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 16px 42px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="dark"] .analytics-live-badge {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.28);
+  background: rgba(52, 211, 153, 0.1);
+}
+
+:root[data-theme="dark"] .analytics-today-metric.tone-approved>strong {
+  color: #34d399;
+}
+
+:root[data-theme="dark"] .analytics-today-metric.tone-rejected>strong {
+  color: #fb7185;
+}
+
+:root[data-theme="dark"] .analytics-today-metric.tone-pending>strong {
+  color: #fbbf24;
+}
+
+:root[data-theme="dark"] .analytics-card {
+  border-color: rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+    rgba(22, 21, 34, 0.85);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 12px 36px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme="dark"] .analytics-card-label {
+  color: #c9b4ff;
+  letter-spacing: 0.16em;
+}
+
+:root[data-theme="dark"] .analytics-card-note {
+  color: #d8c8ff;
+  background: rgba(57, 121, 255, 0.16);
+  border-color: rgba(57, 121, 255, 0.3);
+}
+
+:root[data-theme="dark"] .analytics-day-label {
+  color: #f1effa;
+}
+
+:root[data-theme="dark"] .analytics-day-meta {
+  color: #a8a4cb;
+}
+
+:root[data-theme="dark"] .analytics-bars {
+  background:
+    linear-gradient(180deg, rgba(57, 121, 255, 0.08), rgba(57, 121, 255, 0.02)),
+    rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="dark"] .analytics-metric {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .analytics-metric-label {
+  color: #c4c0e6;
+}
+
+:root[data-theme="dark"] .analytics-metric-value {
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .analytics-row {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .analytics-row-name {
+  color: #f1effa;
+}
+
+:root[data-theme="dark"] .analytics-row-meta,
+:root[data-theme="dark"] .analytics-row-rate {
+  color: #a8a4cb;
+}
+
+:root[data-theme="dark"] .analytics-rank {
+  background: rgba(57, 121, 255, 0.2);
+  color: #e2d5ff;
+}
+
+:root[data-theme="dark"] .analytics-empty {
+  color: #a8a4cb;
+}
+
+/* Grain: white noise reads correctly on a dark base */
+:root[data-theme="dark"] body::after {
+  opacity: 0.3;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Mobile bottom sheet */
+:root[data-theme="dark"] .edit-sheet {
+  background: rgba(17, 16, 26, 0.97);
+  box-shadow: 0 -16px 44px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme="dark"] .edit-sheet>.sheet-handle {
+  background: rgba(17, 16, 26, 0.94);
+}
+
+:root[data-theme="dark"] .sheet-handle-pill {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+:root[data-theme="dark"] .sheet-handle:active .sheet-handle-pill {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* ── Navbar theme toggle ── */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: var(--surface-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.theme-toggle:hover {
+  color: var(--text-primary);
+  background: var(--press-tint);
+  transform: rotate(-12deg);
+}
+
+/* Show the icon for the theme you'd switch TO */
+.theme-toggle .icon-sun {
+  display: none;
+}
+
+.theme-toggle .icon-moon {
+  display: block;
+}
+
+:root[data-theme="dark"] .theme-toggle .icon-sun {
+  display: block;
+}
+
+:root[data-theme="dark"] .theme-toggle .icon-moon {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Slide 2 video — direct upload, trim controls, preview
+   All colours come from the semantic tokens, so light/dark follow
+   the theme automatically with no per-theme overrides needed.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Local-file drop zone — label wraps a hidden input so the whole box clicks */
+.video-file-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 20px 14px;
+  border: 1.5px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: var(--transition);
+}
+
+.video-file-drop:hover,
+.video-file-drop:focus-visible,
+.video-file-drop.dragover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.video-file-drop svg {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.video-preview {
+  width: 100%;
+  max-height: 240px;
+  margin: 4px 0 14px;
+  border-radius: var(--radius-md);
+  background: #000;
+  display: block;
+}
+
+/* Trim time readout — start on the left, end on the right, duration centred */
+.trim-readout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.trim-duration {
+  padding: 3px 10px;
+  border-radius: 100px;
+  background: var(--accent-soft);
+  color: var(--accent-dim);
+  font-weight: 700;
+}
+
+.trim-duration.over-limit {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--red);
+}
+
+.trim-actions {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 14px;
+}
+
+.trim-actions .btn-tiny {
+  flex: 1;
+  padding: 7px 8px;
+  font-size: 0.74rem;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 14px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+#video-export-btn {
+  width: 100%;
+}
+
+/* Export-in-progress feedback. A clip export runs 5-30s (download + encode);
+   without a visible working state the button looks inert and reads as broken. */
+#video-export-btn.working {
+  opacity: 1;
+  /* override the generic :disabled dimming */
+  cursor: progress;
+}
+
+#video-export-btn.working .export-icon {
+  animation: export-spin 0.9s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes export-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Indeterminate bar — the encode gives no percentage, so this conveys
+   "still working" rather than a fake progress value. */
+.export-progress {
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 100px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+
+.export-progress-bar {
+  height: 100%;
+  width: 35%;
+  border-radius: 100px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-deep));
+  animation: export-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes export-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+/* Per-bullet character count. The editorial spec is a tight band, so each
+   bullet shows its own length — an average would hide one bad bullet. */
+.article-bullets li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.bullet-count {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 1px 7px;
+  border-radius: 100px;
+  background: var(--sunken);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bullet-count.over {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--red);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Preview rail — every output visible at once
+   Four cards is past what fits comfortably in a column, so the rail
+   is always a scroller with arrows rather than a grid that squeezes
+   cards below legibility. Scroll-snap keeps a card centred.
+   ═══════════════════════════════════════════════════════════════ */
+
+.preview-rail {
+  flex-shrink: 0;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.preview-rail::-webkit-scrollbar {
+  display: none;
+  height: 0px;
+  width: 0px;
+}
+
+.preview-rail::-webkit-scrollbar-track {
+  display: none;
+  background: transparent;
+}
+
+.preview-rail::-webkit-scrollbar-thumb {
+  display: none;
+  background: transparent;
+}
+
+.preview-card {
+  margin: 0;
+  flex: 0 0 clamp(165px, 31%, 215px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.preview-card-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
+  padding: 2px 4px;
+  transition: color var(--base) var(--ease-out), background-color var(--base) var(--ease-out);
+}
+
+.preview-card-label:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.preview-card-type {
+  transition: color var(--base) var(--ease-out);
+}
+
+.preview-card-num,
+.preview-card-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #0f172a !important;
+  font-size: 0.68rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+:root[data-theme="light"] .preview-card-num,
+:root[data-theme="light"] .preview-card-glyph {
+  background: #2563eb;
+  color: #ffffff !important;
+}
+
+.preview-card-glyph {
+  font-size: 0.6rem;
+}
+
+.preview-rail .canvas-container {
+  padding: 7px;
+}
+
+.preview-rail canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.preview-card-dl {
+  width: 100%;
+  padding: 7px 8px;
+  font-size: 0.73rem;
+  justify-content: center;
+}
+
+.preview-card-x-link {
+  text-decoration: none;
+}
+
+.preview-card-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+/* Cards now carry a grip, a number, a type and sometimes a remove button,
+   so the label row is a layout rather than a line of text. */
+.preview-card-label {
+  gap: 5px;
+}
+
+/* ── Pages: selection, the add tile, and the pinned X card ───────────
+   Cards are the page list, so they carry the two things a list needs:
+   which row you are editing, and how to add or drop one. */
+
+.page-count-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 100px;
+  background: var(--surface-input);
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.page-count-chip.is-full {
+  border-color: var(--accent);
+  color: var(--accent-dim);
+  background: var(--accent-soft);
+}
+
+/* Every page card is a target — the X card is not, so it keeps the
+   default cursor and never takes the selected ring. */
+.preview-card[data-page] {
+  cursor: pointer;
+}
+
+.preview-card[data-page] .canvas-container {
+  border-color: transparent;
+  transition: var(--transition);
+}
+
+.preview-card[data-page]:hover .canvas-container {
+  border-color: var(--border-color);
+}
+
+.preview-card[data-page].is-selected .canvas-container {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.preview-card[data-page].is-selected .preview-card-label {
+  color: var(--text-primary);
+}
+
+.preview-card[data-page].is-selected .preview-card-num {
+  background: var(--accent);
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .preview-card[data-page].is-selected .preview-card-num {
+  background: #2563eb;
+  color: #ffffff !important;
+}
+
+/* The label row carries the remove control on added pages, so it has to
+   stretch rather than hug its text. */
+.preview-card-label {
+  width: 100%;
+}
+
+/* ── Grip ──
+   Only the grip starts a reorder: the video card claims pointer drags for
+   reframing, and a focusable grip is the whole keyboard path (← →). */
+.preview-card-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 17px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: grab;
+  opacity: 0.55;
+  transition: var(--transition);
+}
+
+.preview-card:hover .preview-card-grip,
+.preview-card-grip:focus-visible {
+  opacity: 1;
+  color: var(--accent-dim);
+  background: var(--accent-soft);
+}
+
+.preview-card-grip:active {
+  cursor: grabbing;
+}
+
+.preview-card.is-dragging {
+  opacity: 0.45;
+}
+
+.preview-card.is-dragging .canvas-container {
+  border-color: var(--hairline-2);
+  border-style: dashed;
+}
+
+/* ── Which points this card carries ── */
+.preview-card-slice {
+  display: none !important;
+}
+
+.preview-card-slice[hidden] {
+  display: none !important;
+}
+
+/* ── Edit / Download ── */
+.preview-card-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.preview-card-actions .btn-ghost {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 7px 4px;
+  font-size: 0.7rem;
+  justify-content: center;
+}
+
+.preview-card-edit {
+  gap: 4px;
+}
+
+.preview-card.is-selected .preview-card-edit {
+  border-color: inherit;
+  color: inherit;
+}
+
+.preview-card-remove {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.preview-card-remove:hover {
+  border-color: var(--danger, #ff5f56);
+  color: var(--danger, #ff5f56);
+  background: rgba(255, 95, 86, 0.12);
+}
+
+.preview-card-type {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* ── Add tile ──
+   The choices replace the tile's own face rather than floating over it: a
+   popover on a narrow tile inside a horizontally scrolling rail either
+   overlaps the label underneath it or spills across the next card, and it
+   did both. Filling the tile has neither failure mode. */
+/* One width for both states — wide enough that "Poster page" sits on a
+   single line when open. Animating the width instead just interpolates
+   flex-basis while the rail reflows, for a few pixels of difference. */
+.preview-add {
+  flex: 0 0 clamp(144px, 24%, 168px);
+  align-self: stretch;
+  display: flex;
+  scroll-snap-align: start;
+  /* Clears the card label row so the tile lines up with the canvases. */
+  padding-top: 25px;
+  padding-bottom: 37px;
+}
+
+.preview-add.is-open .preview-add-btn {
+  display: none;
+}
+
+.preview-add-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md, 12px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.preview-add-btn:hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color: var(--accent);
+  color: var(--accent-dim);
+  background: var(--accent-soft);
+}
+
+/* Full, but still clickable. A truly `disabled` button swallows the click
+   entirely, so the one moment a writer most needs an explanation — pressing
+   plus on a full rail — was the one moment nothing could answer them. It
+   looks the same; it just gets to say why now. */
+.preview-add-btn:disabled,
+.preview-add-btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.preview-add-plus {
+  font-size: 1.35rem;
+  line-height: 1;
+  font-weight: 300;
+}
+
+.preview-add-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.preview-add-hint {
+  font-size: 0.63rem;
+  opacity: 0.75;
+}
+
+.preview-add-menu {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md, 12px);
+  /* Opaque on purpose — --surface-card is a 3.5% white wash in the dark
+     theme, which let everything behind it read straight through. */
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-md, 0 16px 34px -14px rgba(0, 0, 0, 0.6));
+}
+
+.preview-add-menu[hidden] {
+  display: none;
+}
+
+.preview-add-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--surface-input);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.preview-add-menu button:hover,
+.preview-add-menu button:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.add-menu-icon {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.preview-add-cancel {
+  margin-top: 2px;
+  justify-content: center;
+  font-size: 0.68rem !important;
+  color: var(--text-muted) !important;
+  background: transparent !important;
+}
+
+/* The X card is an export variant, not a page — a divider says so without
+   a second label. */
+.preview-card-pinned {
+  padding-left: 14px;
+  border-left: 1px dashed var(--border-color);
+}
+
+/* ── "Editing — page N" bar + scoping ──
+   Controls that cannot reach the selected page are dimmed rather than
+   hidden: the panel keeps its shape, so nothing jumps when selection
+   changes, and it is obvious why a field is not accepting input. */
+.page-context {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md, 12px);
+  background: var(--accent-soft);
+}
+
+.page-context[hidden] {
+  display: none;
+}
+
+.page-context-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.page-context-kicker {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-dim);
+}
+
+.page-context-name {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-context #page-context-back {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.scope-off {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+/* ── Arrows ── */
+.rail-nav {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.rail-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--surface-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.rail-arrow:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.rail-arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.rail-arrow[hidden] {
+  display: none;
+}
+
+.preview-status:empty {
+  display: none;
+}
+
+.preview-status {
+  margin-top: 10px;
+}
+
+@media (max-width: 760px) {
+  .preview-card {
+    flex: 0 0 min(72vw, 260px);
+  }
+}
+
+/* A video card is draggable to reframe the crop. Video pages are created at
+   runtime, so the class carries this rather than an id. */
+.video-reframe {
+  cursor: grab;
+  touch-action: none;
+}
+
+.video-reframe.dragging {
+  cursor: grabbing;
+}
+
+/* ─── Search boxes (Review + Analytics) ───────────────────────────
+   Sized to sit inline with the filter tabs without pushing the Refresh
+   button off a narrow toolbar. */
+.review-search,
+.analytics-search {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 340px;
+}
+
+.review-search input,
+.analytics-search input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.82rem;
+}
+
+.review-search input:focus,
+.analytics-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.review-dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* One pill holding the whole range — "Date [from] to [to]" — so the two
+   boxes read as a single control rather than two loose fields. */
+.review-dates-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 14px;
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+}
+
+.review-dates-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent-dim);
+}
+
+.review-dates-sep {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.review-dates input {
+  padding: 7px 10px;
+  background: var(--surface-card);
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-md) - 3px);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* The icon follows the APP's theme, not the OS's: `color-scheme: light dark`
+   here drew it white on a light box whenever the OS was dark. */
+.review-dates input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+:root[data-theme="dark"] .review-dates input {
+  color-scheme: dark;
+}
+
+.review-dates input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.review-dates-apply,
+.review-dates-reset {
+  padding: 9px 18px;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.review-dates-apply {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.review-dates-apply:hover {
+  filter: brightness(1.08);
+}
+
+.review-dates-reset {
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.review-dates-reset:hover {
+  background: var(--surface-input);
+}
+
+.review-search input::placeholder,
+.analytics-search input::placeholder {
+  color: var(--text-muted);
+}
+
+/* ─── Analytics: recent posts, each naming its writer ───────────── */
+.analytics-card-wide {
+  grid-column: 1 / -1;
+}
+
+.analytics-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.analytics-recent-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-md);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.analytics-recent-row:hover {
+  background: var(--hover-tint);
+  border-color: var(--hairline);
+}
+
+.analytics-recent-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.analytics-recent-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-recent-meta {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+.analytics-empty {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 10px 2px;
+}
+
+
+/* ─── Writers: roster on the left, that writer's stories on the right ───
+   Two panes rather than a modal, so QA can move down the team without
+   losing their place. Collapses to one column on narrow screens. */
+.writers-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 18px;
+}
+
+.writers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.writers-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface-card);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-lg);
+  transition: var(--transition);
+}
+
+.writers-item:hover {
+  border-color: var(--hairline);
+}
+
+/* The selected writer is marked with a full border and tint, not just a rail:
+   at a glance you should be able to tell whose stories are on the right. */
+.writers-item.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Disabled accounts stay legible — they are still the audit trail for every
+   post that writer produced — but read as switched off. */
+.writers-item.is-disabled {
+  opacity: 0.6;
+}
+
+.writers-item-open {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.writers-avatar {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.writers-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.writers-item-name {
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.writers-item-meta {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+.writers-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: 49px;
+  margin-top: -2px;
+}
+
+.writers-item-actions .btn-ghost {
+  flex: none;
+  padding: 4px 6px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.writers-item-actions .btn-ghost:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.writers-item-actions .btn-ghost.is-danger {
+  color: var(--red);
+}
+
+.writers-item-actions .btn-ghost.is-danger:hover {
+  background: rgba(220, 53, 69, 0.08);
+}
+
+.writers-item-actions .btn-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
+}
+
+/* ─── The detail pane ─── */
+.writer-detail {
+  min-height: 320px;
+  padding: 18px;
+  background: var(--surface-card);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-lg);
+}
+
+.writer-detail-empty {
+  display: grid;
+  place-items: center;
+  min-height: 280px;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  text-align: center;
+}
+
+.writer-detail-empty[hidden] {
+  display: none;
+}
+
+.writer-detail-head {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline-2);
+}
+
+.writer-detail-head h3 {
+  margin: 0 0 3px;
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.writer-detail-meta {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.writer-posts-empty {
+  list-style: none;
+  padding: 26px 4px;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+/* ─── Add-writer form (hidden until asked for) ─── */
+.writers-add-toggle {
+  flex-shrink: 0;
+}
+
+.writers-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin: 16px 0 4px;
+  padding: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-lg);
+}
+
+.writers-form[hidden] {
+  display: none;
+}
+
+.writers-form .btn-primary {
+  height: 40px;
+}
+
+.writers-form-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.writers-form select,
+.writers-form input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.writers-form select:focus,
+.writers-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .writers-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .writer-detail {
+    min-height: 0;
+  }
+}
+
+/* ─── Navigation: make the current view unmistakable ───────────────
+   The tabs previously differed by a faint tint alone, which on the dark
+   theme was nearly invisible — you could not tell Review from Analytics
+   without reading them. */
+.view-tab {
+  position: relative;
+  font-weight: 550;
+  transition: var(--transition);
+}
+
+.view-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent-dim);
+  font-weight: 680;
+}
+
+.view-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.view-tab:hover:not(.active) {
+  background: var(--hover-tint);
+  color: var(--text-primary);
+}
+
+/* ─── Native <select> popups ──────────────────────────────────────
+   The select itself uses --surface-input, which on the dark theme is
+   rgba(255,255,255,0.055) — translucent. The OS draws the open option list on
+   its own white surface, so that translucent fill resolved to near-white and
+   the near-white option text became unreadable: a list you could open but not
+   read. Options need an OPAQUE background of their own. */
+select option {
+  background-color: var(--surface-solid);
+  color: var(--text-primary);
+}
+
+select option:checked,
+select option:hover {
+  background-color: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+/* Firefox keeps the placeholder legible instead of inheriting the muted grey. */
+select option[value=""] {
+  color: var(--text-secondary);
+}
+
+/* ─── Category + state, side by side ─── */
+.section-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.section-row.has-state {
+  grid-template-columns: 1fr 1fr;
+}
+
+.section-row .field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.section-row .field[hidden] {
+  display: none;
+}
+
+.section-row .field-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.required-mark {
+  color: var(--accent);
+}
+
+/* When DailyMattr will refuse without it, the field says so before you publish
+   rather than after the upload. */
+.section-row .field.is-required select {
+  border-color: var(--accent);
+}
+
+.helper-text.is-warning {
+  color: var(--accent-dim);
+  font-weight: 600;
+}
+
+@media (max-width: 420px) {
+  .section-row.has-state {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Writers header: title and the add button on one row ─────────
+   .review-head is display:block, so a button placed inside it stacked
+   underneath the title and stretched to the full 940px — it read as a banner,
+   not a control. Only the writers header becomes a flex row; the other views
+   have no header button and are left alone. */
+#writers-view .review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* .btn-primary is width:100% globally, which is what stretched it. */
+#writers-view .writers-add-toggle {
+  width: auto;
+  flex: 0 0 auto;
+  margin-top: 6px;
+  padding: 10px 18px;
+  white-space: nowrap;
+}
+
+/* ─── Date on the slide ─── */
+.date-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.date-row .field {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.date-row .field-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.date-row input[type="date"] {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.date-row input[type="date"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The native picker icon is drawn black, which vanishes on the dark theme. */
+:root[data-theme="dark"] .date-row input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.7);
+}
+
+.date-row .btn-ghost {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 9px 14px;
+  white-space: nowrap;
+}
+
+#post-keywords {
+  width: 100%;
+  padding: 9px 12px;
+  margin-top: 4px;
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+#post-keywords:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ─── Confirmation dialog ─────────────────────────────────────────
+   ::backdrop is the browser's own layer for a modal <dialog>, so it always
+   covers the page regardless of the z-index soup underneath it. */
+.pix-dialog {
+  width: min(440px, calc(100vw - 32px));
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xl);
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.pix-dialog::backdrop {
+  background: rgba(8, 11, 20, 0.62);
+  backdrop-filter: blur(3px);
+}
+
+.pix-dialog-inner {
+  padding: 22px;
+}
+
+.pix-dialog-title {
+  margin: 0 0 8px;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.pix-dialog-body {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.pix-dialog-body[hidden] {
+  display: none;
+}
+
+/* Controls the caller injected — currently the category picker for a post
+   that reached Review without one. */
+.pix-dialog-extras {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.pix-dialog-extras[hidden] {
+  display: none;
+}
+
+.publish-picker-field {
+  display: grid;
+  gap: 5px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.publish-picker-field[hidden] {
+  display: none;
+}
+
+.publish-picker-field select {
+  width: 100%;
+  padding: 9px 11px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-md);
+}
+
+/* The specifics of what is about to happen — the reason this exists rather
+   than window.confirm, which has nowhere to put them. */
+.pix-dialog-facts {
+  margin: 14px 0 0;
+  padding: 12px 14px 12px 30px;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+.pix-dialog-facts[hidden] {
+  display: none;
+}
+
+.pix-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.pix-dialog-actions .btn-ghost,
+.pix-dialog-actions .btn-primary {
+  width: auto;
+  padding: 9px 18px;
+  font-size: 0.84rem;
+}
+
+/* Destructive actions read red; publishing is not destructive, just final. */
+.pix-dialog-actions .btn-primary.is-danger {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+
+.pix-dialog-actions .btn-primary.is-danger:hover {
+  filter: brightness(1.08);
+}
+
+@media (max-width: 420px) {
+  .pix-dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .pix-dialog-actions .btn-ghost,
+  .pix-dialog-actions .btn-primary {
+    width: 100%;
+  }
+}
+
+/* ─── Weekly output column ─────────────────────────────────────────
+   The headline number on the roster: what this writer produced in the last
+   seven days, with an arrow against the seven before it. A lifetime total
+   says who has been here longest; this says who is producing now. */
+.roster-week {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.roster-week.is-up {
+  color: var(--green);
+}
+
+.roster-week.is-down {
+  color: var(--red);
+}
+
+.roster-week.is-flat {
+  color: var(--text-primary);
+}
+
+/* Same figure on the Writers roster, where it sits under the name. */
+.writers-week {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-dim);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+/* An admin badge should not read as QA — same powers, different job. */
+.role-badge.is-admin {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-dim);
+}
+
+/* ═══ Screen Zoom Preview Modal ══════════════════════════════════════════ */
+.screen-preview-modal {
+  margin: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  max-width: 96vw;
+  max-height: 96vh;
+  outline: none;
+  overflow: visible;
+}
+
+.screen-preview-modal::backdrop {
+  background: rgba(10, 12, 20, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.screen-preview-modal-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-height: 94vh;
+  max-width: 95vw;
+  animation: zoom-dialog-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes zoom-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.screen-preview-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 100%;
+  background: var(--surface-solid);
+  border: 1px solid var(--hairline);
+  padding: 8px 16px;
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+  box-sizing: border-box;
+}
+
+.screen-preview-modal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+}
+
+.screen-preview-modal-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #0f172a !important;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+:root[data-theme="light"] .screen-preview-modal-num {
+  background: #2563eb;
+  color: #ffffff !important;
+}
+
+.screen-preview-modal-type {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.screen-preview-modal-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.screen-preview-modal-btn {
+  padding: 4px 10px;
+  height: 28px;
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+}
+
+.screen-preview-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.screen-preview-modal-close:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+  border-color: var(--hairline-2);
+}
+
+.screen-preview-modal-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: calc(94vh - 65px);
+  max-width: 94vw;
+  overflow: hidden;
+}
+
+.screen-preview-canvas-wrap {
+  position: relative;
+  max-height: calc(94vh - 65px);
+  max-width: min(94vw, 1200px);
+  background: #000000;
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.screen-preview-canvas-wrap canvas {
+  max-height: calc(94vh - 65px);
+  max-width: min(94vw, 1200px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  border-radius: inherit;
+}
+
+/* ─── Analytics polish ──────────────────────────────────────
+   The dashboard is summary-first: global filters stay visible, headline
+   metrics form one quiet strip, and the team table is immediately readable. */
+.analytics-shell {
+  padding-bottom: 72px;
+}
+
+.analytics-intro {
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+
+.analytics-intro h1 {
+  max-width: 720px;
+  margin: 0;
+  font-size: clamp(2rem, 4.2vw, 3.65rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.analytics-intro .desc {
+  max-width: 720px;
+  margin-top: 14px;
+  line-height: 1.65;
+}
+
+.analytics-intro-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding-bottom: 3px;
+}
+
+.analytics-updated {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.analytics-refresh {
+  min-height: 38px;
+  padding-inline: 15px;
+  white-space: nowrap;
+}
+
+.analytics-refresh:disabled {
+  cursor: wait;
+}
+
+#analytics-status:empty {
+  display: none;
+}
+
+.analytics-filterbar {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.42fr) minmax(0, 1.58fr);
+  align-items: center;
+  gap: 18px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  background: var(--surface-card);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), var(--shadow-sm);
+}
+
+.analytics-filterbar:has(.analytics-select-menu.is-open) {
+  z-index: 40;
+}
+
+.analytics-filterbar-copy {
+  min-width: 0;
+}
+
+.analytics-filterbar-copy .analytics-card-label {
+  margin-bottom: 3px;
+}
+
+.analytics-filterbar-copy strong,
+.analytics-filterbar-copy>span:last-child {
+  display: block;
+}
+
+.analytics-filterbar-copy strong {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+}
+
+.analytics-filterbar-copy>span:last-child {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-filterbar-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.analytics-filterbar .analytics-roster-filter {
+  flex: 0 1 auto;
+  gap: 7px;
+  padding: 4px 4px 4px 10px;
+  border-color: var(--hairline);
+  border-radius: 12px;
+  background: var(--surface-input);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.analytics-filterbar .analytics-select-trigger,
+.analytics-filterbar .analytics-roster-filter input[type="date"] {
+  min-height: 34px;
+  border-color: transparent;
+  border-radius: 9px;
+  background: var(--surface-solid);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.analytics-filterbar .analytics-select-trigger {
+  min-width: 132px;
+  max-width: 180px;
+  padding: 7px 10px;
+}
+
+.analytics-filterbar .analytics-select-trigger>span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-filterbar .analytics-roster-filter input[type="date"] {
+  width: 128px;
+  padding: 6px 8px;
+}
+
+.analytics-date-separator {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.analytics-filter-apply,
+.analytics-filter-clear {
+  min-height: 42px;
+  border-radius: 12px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.analytics-filter-apply {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.analytics-filter-clear {
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.analytics-filter-apply:hover,
+.analytics-filter-clear:hover {
+  transform: translateY(-1px);
+}
+
+.analytics-filter-clear:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.analytics-hero {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.analytics-stat-card {
+  --analytics-stat-accent: var(--accent);
+  min-height: 144px;
+  padding: 18px 17px 16px;
+  border-color: var(--hairline);
+  border-radius: 18px;
+  background: var(--surface-card);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), var(--shadow-sm);
+}
+
+.analytics-stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 14px auto;
+  height: 3px;
+  border-radius: 0 0 999px 999px;
+  background: var(--analytics-stat-accent);
+}
+
+.analytics-stat-card::after {
+  display: none;
+}
+
+.analytics-stat-card.accent-a {
+  --analytics-stat-accent: #3979ff;
+  background: linear-gradient(180deg, rgba(57, 121, 255, 0.08), transparent 55%), var(--surface-card);
+}
+
+.analytics-stat-card.accent-b {
+  --analytics-stat-accent: #10a879;
+  background: linear-gradient(180deg, rgba(16, 168, 121, 0.08), transparent 55%), var(--surface-card);
+}
+
+.analytics-stat-card.accent-e {
+  --analytics-stat-accent: #e45e6d;
+  background: linear-gradient(180deg, rgba(228, 94, 109, 0.08), transparent 55%), var(--surface-card);
+}
+
+.analytics-stat-card.accent-c {
+  --analytics-stat-accent: #e79a25;
+  background: linear-gradient(180deg, rgba(231, 154, 37, 0.09), transparent 55%), var(--surface-card);
+}
+
+.analytics-stat-card.accent-d {
+  --analytics-stat-accent: #7f6ce5;
+  background: linear-gradient(180deg, rgba(127, 108, 229, 0.08), transparent 55%), var(--surface-card);
+}
+
+.analytics-stat-card:nth-child(5) {
+  animation-delay: 0.2s;
+}
+
+.analytics-stat-value {
+  margin-top: 13px;
+  font-size: clamp(2rem, 3vw, 2.55rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-stat-sub {
+  min-height: 2.3em;
+  margin-top: 11px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.analytics-today-card {
+  margin-top: 10px;
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), var(--shadow-sm);
+}
+
+.analytics-grid {
+  margin-top: 10px;
+}
+
+.analytics-card {
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), var(--shadow-sm);
+}
+
+.analytics-meta-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.analytics-meta-card .analytics-card-head {
+  margin: 0;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.analytics-meta-card .analytics-card-label {
+  margin-bottom: 3px;
+}
+
+.analytics-meta-card .analytics-metric-list {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+}
+
+.analytics-meta-card .analytics-metric {
+  min-width: 0;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 7px;
+  padding: 16px 18px 18px;
+  border: 0;
+  border-right: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+}
+
+.analytics-meta-card .analytics-metric:last-child {
+  border-right: 0;
+}
+
+.analytics-meta-card .analytics-metric-value {
+  font-size: 1.32rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-roster-card {
+  border-radius: 18px;
+}
+
+.analytics-roster-head {
+  padding: 16px 18px;
+}
+
+.analytics-roster-body {
+  overflow-x: auto;
+  padding: 0 18px 18px;
+}
+
+.analytics-roster-list {
+  min-width: 940px;
+  row-gap: 6px;
+  column-gap: 12px;
+}
+
+.roster-row {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--surface-input);
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.roster-row:hover {
+  transform: none;
+  background: var(--hover-tint);
+}
+
+.roster-head-row,
+.roster-head-row:hover {
+  padding-bottom: 4px;
+  background: transparent;
+}
+
+.analytics-card-wide .analytics-card-head {
+  align-items: center;
+}
+
+.analytics-card-wide .analytics-search input {
+  min-height: 40px;
+  border-radius: 12px;
+}
+
+.analytics-recent {
+  gap: 7px;
+}
+
+.analytics-recent-row {
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+
+.analytics-recent-row:hover {
+  border-color: rgba(57, 121, 255, 0.28);
+}
+
+@media (max-width: 1180px) {
+  .analytics-filterbar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .analytics-filterbar-controls {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .analytics-hero {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .analytics-intro {
+    align-items: flex-start;
+  }
+
+  .analytics-intro-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .analytics-meta-card .analytics-metric-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analytics-meta-card .analytics-metric:nth-child(2) {
+    border-right: 0;
+  }
+
+  .analytics-meta-card .analytics-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--hairline);
+  }
+}
+
+@media (max-width: 620px) {
+  .analytics-shell {
+    padding-bottom: 94px;
+  }
+
+  .analytics-intro h1 {
+    font-size: 2.35rem;
+  }
+
+  .analytics-filterbar {
+    padding: 14px;
+  }
+
+  .analytics-filterbar-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .analytics-filterbar .analytics-roster-filter,
+  .analytics-filterbar .analytics-select,
+  .analytics-filterbar .analytics-select-trigger {
+    width: 100%;
+    max-width: none;
+  }
+
+  .analytics-filterbar .analytics-roster-dates {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .analytics-filterbar .analytics-roster-filter input[type="date"] {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .analytics-filter-apply,
+  .analytics-filter-clear {
+    width: 100%;
+  }
+
+  .analytics-hero {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analytics-stat-card {
+    min-height: 132px;
+    padding: 16px 14px;
+  }
+
+  .analytics-stat-card:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .analytics-stat-value {
+    font-size: 2rem;
+  }
+
+  .analytics-roster-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .analytics-roster-cue {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .analytics-card-wide .analytics-card-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .analytics-search {
+    max-width: none;
+  }
+}
+
+/* The undo beside AI Enhance. btn-ghost is an inline chip everywhere else in
+   the app; here it sits directly under a full-width .btn-ai, so it matches
+   that width rather than floating half a box wide beneath it. */
+.btn-undo-image {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* Which bracket drives which colour. The two pickers are otherwise identical
+   and a hex alone does not say what types it — this is the label that makes
+   the pair legible at a glance. Sits between them and the panel edge, so it
+   takes the leftover space rather than pushing the hex around. */
+.color-picker-wrap + .color-picker-wrap {
+  margin-top: 10px;
+}
+
+.color-bracket-hint {
+  font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  opacity: 0.75;
+  margin-left: auto;
+  letter-spacing: 0.04em;
+}
+
+/* Clicking anywhere in a date box opens its calendar (see app.js), so the
+   whole box reads as clickable, not just the icon. */
+input[type="date"]:not(:disabled),
+input[type="date"]:not(:disabled)::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+}
+
+/* ─── Review: bulk select ─────────────────────────────────────────── */
+.review-bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-input);
+}
+
+.review-bulk[hidden] {
+  display: none;
+}
+
+.review-bulk-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.review-bulk-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.review-bulk-delete:not(:disabled) {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #dc2626;
+}
+
+.review-bulk input[type="checkbox"],
+.review-select {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.review-item.is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}

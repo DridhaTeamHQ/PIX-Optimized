@@ -1,0 +1,2515 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Pix — visual revamp layer
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Loaded after styles.css and works almost entirely by redefining tokens the
+   existing rules already read. That is deliberate: styles.css is ~5,700 lines
+   of working, tested layout, and rewriting it to change how the app LOOKS
+   would risk functionality for no visual gain. The parts that cannot be
+   expressed as a token — spacing rhythm, elevation, motion — are overridden
+   by selector below, and nothing here changes what any control does.
+
+   ── The problem this fixes ──────────────────────────────────────────────
+
+   Measured before starting: a panel sat at 1.07:1 contrast against the page.
+   That is the whole complaint. "Cluttered" and "stacked on one another" were
+   symptoms of surfaces that never separated from their background — with no
+   elevation, nine accordions, three columns and a preview rail all dissolve
+   into one dark field and the eye has nowhere to rest. The fix is not less
+   content. It is making each surface visibly sit in front of the one behind.
+
+   Light is now the default because separation by LIGHT — white panels casting
+   real shadows onto a soft grey page — is far easier to read than separation
+   by hairlines on near-black, and this is an app people sit in for hours.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Surfaces ──
+     A cool grey page with white panels. The page is deliberately not white:
+     a white panel on a white page has to be drawn with a border, and borders
+     everywhere is exactly the "boxed in" look we are leaving behind. */
+  /* ── Palette: #F1FCFD · #C7EEFF · #4D6DE3 · #393737 ──
+
+     The first of these palettes whose accent is unconstrained. #4D6DE3 gives
+     white 4.56:1 AND reads at 4.56:1 as text on the light page, so unlike the
+     yellow and the teal before it, it can both fill a button and be a link —
+     which is why the interface can finally be one colour rather than a system
+     of workarounds.
+
+     #F1FCFD  page — a cyan-white, so white cards still separate from it
+     #C7EEFF  borders, soft fills, hover, selection
+     #4D6DE3  the accent: buttons, active states, links, rings
+     #393737  text and the sidebar
+
+     4.56:1 clears AA for normal text but not by much, so hover deepens rather
+     than lightens — a lighter hover would drop the label below the line. */
+  --bg-color: #f1f5f9;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-solid: #ffffff;
+  --surface-input: #f8fafc;
+  --surface-card: #ffffff;
+
+  --pale: #f8fafc;
+  --sky: #e0f2fe;
+  --indigo: #2563eb;
+  --ink: #1e293b;
+
+  --hairline: #cbd5e1;
+  --hairline-2: #e2e8f0;
+  --hover-tint: rgba(37, 99, 235, 0.06);
+  --press-tint: rgba(37, 99, 235, 0.12);
+  --sunken: rgba(15, 23, 42, 0.04);
+  --border-color: var(--hairline);
+  --border-subtle: var(--hairline-2);
+
+  --text-primary: #0f172a;
+  /* Deep rich slate — crystal clear 16:1 contrast */
+  --text-secondary: #334155;
+  /* Slate 700 — rich and readable 10:1 */
+  --text-muted: #64748b;
+  /* Slate 500 — clear 5.5:1 */
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 3px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 10px 25px -3px rgba(15, 23, 42, 0.10), 0 4px 6px -4px rgba(15, 23, 42, 0.05);
+  --shadow-accent: 0 4px 14px rgba(37, 99, 235, 0.25);
+
+  --glass-fill: rgba(255, 255, 255, 0.92);
+  --glass-inner: rgba(255, 255, 255, 0.7);
+  --glass-edge: rgba(15, 23, 42, 0.08);
+  --glass-edge-strong: rgba(37, 99, 235, 0.35);
+  --glass-menu: rgba(255, 255, 255, 0.98);
+  --glass-shadow: var(--shadow-lg);
+
+  --accent: #2563eb;
+  --accent-bright: #2563eb;
+  --accent-light: #dbeafe;
+  --accent-dim: #1d4ed8;
+  /* hover — deeper, so white stays legible */
+  --accent-deep: #1e40af;
+  --accent-soft: rgba(37, 99, 235, 0.10);
+  --accent-glow: rgba(37, 99, 235, 0.25);
+
+  --green: #059669;
+  --green-soft: rgba(5, 150, 105, 0.12);
+  --red: #dc2626;
+
+  /* ── Rhythm ──
+     One scale, so spacing is chosen from a set rather than typed per rule. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  /* ── Motion ──
+     Two curves and three speeds. `--ease-out` for things arriving, `--spring`
+     for anything the user pressed — a control that answers a click with a
+     slight overshoot feels responsive in a way a linear fade does not. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --fast: 140ms;
+  --base: 240ms;
+  --slow: 400ms;
+}
+
+/* ── Dark, rebuilt ──
+   Kept because the toggle is still there, and rebuilt rather than inherited.
+   The base lifts off near-black (#080b14 -> #0e1117) and each surface is a
+   real step up instead of white at 3.5% alpha, which is what produced the
+   1.07:1 measurement. Panels now separate from the page by roughly 1.9:1. */
+:root[data-theme="dark"] {
+  /* #393737 is the page; the pale cyan becomes the text at 11.9:1, and the
+     sky blue takes over as the accent because #4D6DE3 on charcoal is only
+     3.1:1 — the same rule as the light theme, read the other way round. */
+  --bg-color: #2a2828;
+  --surface: #393737;
+  --surface-2: #333131;
+  --surface-solid: #423f3f;
+  --surface-input: #2f2d2d;
+  --surface-card: #3d3a3a;
+
+  --hairline: rgba(241, 252, 253, 0.13);
+  --hairline-2: rgba(241, 252, 253, 0.07);
+  --hover-tint: rgba(199, 238, 255, 0.10);
+  --press-tint: rgba(199, 238, 255, 0.18);
+  --sunken: rgba(0, 0, 0, 0.26);
+
+  --text-primary: #f1fcfd;
+  --text-secondary: #c3cccd;
+  --text-muted: #9aa2a3;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.32), 0 8px 20px rgba(0, 0, 0, 0.38);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.38), 0 20px 48px rgba(0, 0, 0, 0.52);
+  --shadow-accent: 0 4px 14px rgba(199, 238, 255, 0.22);
+
+  --glass-fill: rgba(57, 55, 55, 0.9);
+  --glass-inner: rgba(241, 252, 253, 0.05);
+  --glass-edge: rgba(241, 252, 253, 0.12);
+  --glass-menu: rgba(47, 45, 45, 0.98);
+
+  --accent: #c7eeff;
+  /* 12.5:1 on the page */
+  --accent-bright: #c7eeff;
+  --accent-light: #8fd4f0;
+  --accent-dim: #a8e0f7;
+  --accent-deep: #6fb8dc;
+  --accent-soft: rgba(199, 238, 255, 0.16);
+
+  --green: #34d399;
+  --green-soft: rgba(52, 211, 153, 0.14);
+  --red: #fb7185;
+}
+
+/* Colour changes fade instead of snapping when the toggle is pressed. */
+body,
+.glass-panel,
+.app-nav,
+.acc,
+.preview-card,
+.review-item {
+  transition: background-color var(--base) var(--ease-out),
+    border-color var(--base) var(--ease-out),
+    color var(--base) var(--ease-out);
+}
+
+/* ═══ Layout: air ═══════════════════════════════════════════════════════════
+   The columns stay exactly where they are — every control keeps its place, so
+   nobody has to relearn the app. What changes is the space between things. */
+
+.app-shell {
+  gap: var(--space-5);
+  /* was 16px */
+  padding-inline: var(--space-5);
+  align-items: start;
+}
+
+.glass-panel {
+  background: var(--surface);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: none;
+  /* a real surface, not a frosted hole */
+  padding: var(--space-5);
+}
+
+/* The preview column is the thing being made — let it stay put while the
+   editor scrolls, instead of running away up the page. */
+@media (min-width: 1100px) {
+  .app-shell>.glass-panel:last-child {
+    position: sticky;
+    top: calc(var(--nav-h, 64px) + var(--space-4));
+    max-height: calc(100vh - var(--nav-h, 64px) - var(--space-6));
+    overflow-y: auto;
+  }
+}
+
+/* ═══ Accordions ════════════════════════════════════════════════════════════
+   Nine of them in a column was the "stacked" complaint. They are now discrete
+   cards with space between, so the eye can count them instead of reading one
+   undifferentiated ladder. */
+
+.acc {
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-3);
+  overflow: hidden;
+  transition: box-shadow var(--base) var(--ease-out),
+    border-color var(--base) var(--ease-out),
+    transform var(--base) var(--ease-out);
+}
+
+.acc[data-open="true"] {
+  background: var(--surface);
+  border-color: var(--hairline);
+  box-shadow: var(--shadow-sm);
+}
+
+.acc-head {
+  padding: var(--space-4) var(--space-4);
+  border-radius: var(--radius-lg);
+  transition: background-color var(--fast) var(--ease-out);
+}
+
+.acc-head:hover {
+  background: var(--hover-tint);
+}
+
+.acc-title {
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.acc-inner {
+  padding-inline: var(--space-4);
+}
+
+.acc[data-open="true"]>.acc-body>.acc-inner {
+  padding-bottom: var(--space-4);
+}
+
+/* Slightly slower than the original 0.32s, on the arriving curve — an
+   accordion that eases open reads as revealing, one that snaps reads as a
+   glitch. The chevron turns on the same clock so they feel like one gesture. */
+.acc-body {
+  transition: grid-template-rows var(--slow) var(--ease-out);
+}
+
+.acc-chevron {
+  transition: transform var(--slow) var(--ease-out);
+}
+
+/* ═══ Inputs ════════════════════════════════════════════════════════════════ */
+
+input[type="text"],
+input[type="url"],
+input[type="password"],
+input[type="date"],
+input[type="search"],
+textarea,
+select {
+  background: var(--surface-input);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.86rem;
+  color: var(--text-primary);
+  transition: background-color var(--fast) var(--ease-out),
+    border-color var(--fast) var(--ease-out),
+    box-shadow var(--fast) var(--ease-out);
+}
+
+input:hover:not(:focus),
+textarea:hover:not(:focus),
+select:hover:not(:focus) {
+  border-color: var(--border-color);
+  background: var(--surface-input);
+}
+
+/* A ring rather than a colour swap: the field keeps its shape, so the layout
+   does not shift by a pixel when focus lands. */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  background: var(--surface);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+::placeholder {
+  color: var(--text-muted);
+  opacity: 0.9;
+}
+
+/* ═══ Buttons ═══════════════════════════════════════════════════════════════
+   Every button answers the pointer in three stages: lift on hover, settle on
+   press, ring on focus. The press uses a scale below 1 because a control that
+   gives slightly under the cursor feels physical. */
+
+button,
+.btn-primary,
+.btn-secondary,
+.btn-ghost,
+.btn-ai {
+  border-radius: var(--radius-md);
+  transition: transform var(--fast) var(--spring),
+    box-shadow var(--base) var(--ease-out),
+    background-color var(--fast) var(--ease-out),
+    border-color var(--fast) var(--ease-out),
+    color var(--fast) var(--ease-out);
+}
+
+.btn-primary,
+.btn-ai {
+  box-shadow: var(--shadow-accent);
+  font-weight: 620;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-ai:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(13, 71, 161, 0.38);
+}
+
+.btn-primary:active:not(:disabled),
+.btn-ai:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-ghost,
+.btn-secondary {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-ghost:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--hairline);
+  background: var(--surface);
+}
+
+.btn-ghost:active:not(:disabled),
+.btn-secondary:active:not(:disabled) {
+  transform: scale(0.985);
+  box-shadow: none;
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+}
+
+button:disabled {
+  opacity: 0.45;
+  transform: none !important;
+  box-shadow: none;
+}
+
+/* ═══ Navigation ════════════════════════════════════════════════════════════ */
+
+.app-nav {
+  background: var(--glass-fill);
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  border-bottom: 1px solid var(--hairline-2);
+  box-shadow: 0 1px 3px rgba(19, 27, 51, 0.04);
+}
+
+.nav-tab,
+.nav-link {
+  border-radius: var(--radius-md);
+  transition: background-color var(--fast) var(--ease-out),
+    color var(--fast) var(--ease-out),
+    transform var(--fast) var(--spring);
+}
+
+.nav-tab:hover,
+.nav-link:hover {
+  background: var(--hover-tint);
+}
+
+.nav-tab:active,
+.nav-link:active {
+  transform: scale(0.97);
+}
+
+/* ═══ Preview rail ══════════════════════════════════════════════════════════
+   The posters are the product. They get the most elevation on the page and
+   the only lift-on-hover that moves more than a pixel. */
+
+.preview-card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  transition: box-shadow var(--base) var(--ease-out);
+}
+
+.preview-card:hover {
+  transform: none;
+  box-shadow: var(--shadow-md);
+}
+
+.preview-card.is-selected {
+  box-shadow: var(--shadow-lg);
+}
+
+/* ═══ Review rows ═══════════════════════════════════════════════════════════ */
+
+.review-item {
+  background: var(--surface);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--space-3);
+  transition: transform var(--base) var(--ease-out),
+    box-shadow var(--base) var(--ease-out),
+    border-color var(--base) var(--ease-out);
+}
+
+.review-item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--hairline);
+}
+
+/* ═══ Dialog ════════════════════════════════════════════════════════════════ */
+
+#pix-dialog {
+  border: none;
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-5);
+  animation: dialog-in var(--base) var(--ease-out);
+}
+
+#pix-dialog::backdrop {
+  background: rgba(13, 71, 161, 0.34);
+  backdrop-filter: blur(4px);
+  animation: fade-in var(--base) var(--ease-out);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* ═══ Entrances ═════════════════════════════════════════════════════════════
+   Switching views is a `display` change, which cannot transition — so the
+   arriving view plays a short rise instead. The columns stagger by 60ms so
+   the page assembles left to right rather than appearing all at once. */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.app-shell>.glass-panel {
+  animation: rise-in var(--slow) var(--ease-out) both;
+}
+
+.app-shell>.glass-panel:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.app-shell>.glass-panel:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.app-shell>.glass-panel:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.review-view,
+.analytics-view,
+.writers-view,
+.article-view {
+  animation: rise-in var(--slow) var(--ease-out) both;
+}
+
+/* Review rows arrive in sequence. Capped at 12 so a hundred-row queue does
+   not spend two seconds assembling itself. */
+.review-item {
+  animation: rise-in var(--base) var(--ease-out) both;
+}
+
+.review-item:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.review-item:nth-child(2) {
+  animation-delay: 30ms;
+}
+
+.review-item:nth-child(3) {
+  animation-delay: 60ms;
+}
+
+.review-item:nth-child(4) {
+  animation-delay: 90ms;
+}
+
+.review-item:nth-child(5) {
+  animation-delay: 120ms;
+}
+
+.review-item:nth-child(6) {
+  animation-delay: 150ms;
+}
+
+.review-item:nth-child(7) {
+  animation-delay: 180ms;
+}
+
+.review-item:nth-child(8) {
+  animation-delay: 210ms;
+}
+
+.review-item:nth-child(9) {
+  animation-delay: 240ms;
+}
+
+.review-item:nth-child(10) {
+  animation-delay: 270ms;
+}
+
+.review-item:nth-child(n+11) {
+  animation-delay: 300ms;
+}
+
+/* Status lines say something changed; sliding in a few pixels is how the eye
+   catches that without a colour flash. */
+.status-text:not(:empty) {
+  animation: rise-in var(--base) var(--ease-out);
+}
+
+/* ═══ Stock grid ════════════════════════════════════════════════════════════ */
+
+.stock-grid img,
+.stock-grid button {
+  border-radius: var(--radius-md);
+  transition: transform var(--base) var(--ease-out),
+    box-shadow var(--base) var(--ease-out);
+}
+
+.stock-grid img:hover,
+.stock-grid button:hover {
+  transform: scale(1.04);
+  box-shadow: var(--shadow-md);
+}
+
+/* ═══ Sliders ═══════════════════════════════════════════════════════════════ */
+
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  transition: transform var(--fast) var(--spring),
+    box-shadow var(--fast) var(--ease-out);
+}
+
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 6px var(--accent-soft);
+}
+
+/* ═══ Typography ════════════════════════════════════════════════════════════ */
+
+h1 {
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+h2,
+h3 {
+  letter-spacing: -0.01em;
+}
+
+.helper-text {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.acc-subtitle {
+  color: var(--text-secondary);
+  letter-spacing: 0.06em;
+  margin-top: var(--space-4);
+}
+
+/* ═══ Scrollbars ════════════════════════════════════════════════════════════
+   Three independently scrolling columns means three scrollbars on screen at
+   once. Thin and low-contrast until touched. */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  transition: background-color var(--fast) var(--ease-out);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+/* ═══ Reduced motion ════════════════════════════════════════════════════════
+   Everything above is decoration on top of a UI that works without it. For
+   anyone who has asked the OS for less movement, all of it goes — including
+   the entrance animations, which use `both` fill and would otherwise leave
+   elements stuck at opacity 0 if merely shortened. */
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CMS shell — sidebar, topbar, content well
+   ═══════════════════════════════════════════════════════════════════════════
+
+   The sidebar stays dark in both themes. That is not decoration: it separates
+   "where am I in the app" from "what am I working on", so the white working
+   area reads as the document and the rail reads as chrome. It also gives the
+   light theme a fixed anchor on the left instead of white meeting white at
+   the window edge. */
+
+.cms-layout {
+  display: grid;
+  grid-template-columns: var(--rail-w, 232px) minmax(0, 1fr);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ── Sidebar ── */
+
+.cms-sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-3) var(--space-4);
+  background: #393737;
+  border-right: 1px solid rgba(255, 255, 255, 0.10);
+  z-index: 40;
+}
+
+.cms-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--space-3) var(--space-5);
+}
+
+.cms-brand .nav-logo-mark {
+  display: block;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: none;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+}
+
+.agent-auth-kicker {
+  align-items: center;
+  gap: 9px;
+}
+
+.agent-auth-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  box-shadow: 0 5px 14px rgba(37, 99, 235, 0.24);
+}
+
+.cms-brand-text {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.cms-brand-text em {
+  font-style: normal;
+  font-weight: 500;
+  color: #c7eeff;
+}
+
+/* The switcher becomes a vertical rail. Same element, same id, same buttons —
+   only the axis changes. */
+.cms-sidebar .view-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  overflow: visible;
+}
+
+.cms-sidebar .view-tab {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 11px var(--space-3);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: #c9d2d3;
+  font-size: 0.86rem;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: background-color var(--fast) var(--ease-out),
+    color var(--fast) var(--ease-out),
+    transform var(--fast) var(--spring);
+}
+
+.cms-sidebar .view-tab svg {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.cms-sidebar .view-tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  transform: none;
+}
+
+.cms-sidebar .view-tab.active {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 620;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.cms-sidebar .view-tab.active svg {
+  opacity: 1;
+}
+
+.cms-sidebar .view-tab:active {
+  transform: scale(0.98);
+}
+
+.cms-sidebar-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: none;
+}
+
+.cms-side-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  padding: 10px var(--space-3);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: #c9d2d3;
+  font-size: 0.82rem;
+  font-weight: 550;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.cms-side-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  transform: none;
+  box-shadow: none;
+}
+
+.cms-side-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c7eeff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* ── Topbar ── */
+
+.cms-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cms-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline-2);
+}
+
+.cms-topbar-title h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+.cms-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.cms-crumb-sep {
+  opacity: 0.55;
+}
+
+#cms-crumb-current {
+  color: var(--text-secondary);
+  font-weight: 550;
+}
+
+.cms-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cms-date {
+  font-size: 0.78rem;
+  font-weight: 550;
+  color: var(--text-secondary);
+  padding: 6px 11px;
+  border-radius: var(--radius-md);
+  background: var(--surface-input);
+  white-space: nowrap;
+}
+
+/* ── Content well ── */
+
+.cms-body {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-5) 0 var(--space-6);
+}
+
+/* The three columns already live in .app-shell; inside the new shell they
+   simply stop needing their own centering. */
+/* `width: min(1380px, 100vw - 40px)` was sized against the whole viewport,
+   which no longer exists for this element: 232px of it is the sidebar. On a
+   1590px window that asked for 1380px inside a 1358px column and pushed the
+   whole document 22px wide. Width comes from the column now. */
+.cms-body .app-shell {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding-inline: var(--space-5);
+}
+
+/* The sidebar is the page's left edge now, so the aurora backdrop — which was
+   there to stop a near-black page reading as a void — has nothing left to do
+   and only muddies the white. */
+.aurora {
+  display: none;
+}
+
+/* Other views get the same gutters as the poster shell. */
+.cms-body .article-shell,
+.cms-body .review-shell,
+.cms-body .analytics-shell {
+  width: auto;
+  /* same 100vw trap as .app-shell */
+  max-width: none;
+  margin: 0;
+  padding-inline: var(--space-5);
+}
+
+/* ── Narrow screens: the rail becomes a strip ── */
+
+@media (max-width: 1000px) {
+  .cms-layout {
+    grid-template-columns: 68px minmax(0, 1fr);
+  }
+
+  .cms-brand-text,
+  .cms-side-badge {
+    display: none;
+  }
+
+  .cms-sidebar {
+    padding-inline: 10px;
+  }
+
+  .cms-sidebar .view-tab {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .cms-sidebar .view-tab span {
+    display: none;
+  }
+
+  .cms-side-link {
+    justify-content: center;
+  }
+
+  .cms-side-link span {
+    display: none;
+  }
+
+  .cms-brand {
+    justify-content: center;
+    padding-inline: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .cms-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cms-sidebar {
+    position: fixed;
+    bottom: 0;
+    top: auto;
+    left: 0;
+    right: 0;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    padding: var(--space-2);
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .cms-brand,
+  .cms-sidebar-foot {
+    display: none;
+  }
+
+  .cms-sidebar .view-tabs {
+    flex-direction: row;
+    width: 100%;
+  }
+
+  .cms-sidebar .view-tab {
+    flex: 1;
+  }
+
+  .cms-body {
+    padding-bottom: 84px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Reference layout — Source | Preview | Compose, media strip, action bar
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Three cards of near-equal weight, with the preview widest because it is the
+   thing being made. Previously the preview shared its column with the publish
+   form, which is why the poster was small and its header overflowed. */
+.cms-body .app-shell {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+/* ── Preview header: stop it overflowing ──
+   Five controls, a page counter and a pixel chip in one row is what wrapped
+   "New post" onto two lines and squeezed "920 x 1700" into a vertical "9 x 1".
+   Save / Reject / New post now live in the action bar, and what is left wraps
+   instead of overflowing. */
+
+.preview-header {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  row-gap: var(--space-3);
+}
+
+.preview-header-actions {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The originals stay in the DOM — the footer proxies click them — but they no
+   longer take space in a row they were bursting. */
+.preview-header-actions #save-pix-btn,
+.preview-header-actions #new-pix-btn,
+.preview-header-actions #reject-pix-btn {
+  display: none;
+}
+
+.preview-pixels {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── The poster gets room ── */
+
+.preview-rail {
+  gap: var(--space-4);
+  padding-bottom: var(--space-2);
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.preview-rail::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.preview-rail::-webkit-scrollbar-track,
+.preview-rail::-webkit-scrollbar-thumb {
+  display: none !important;
+}
+
+.preview-card {
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  padding: var(--space-2);
+}
+
+/* One ring, not two. The card had an accent border and the canvas inside had
+   its own, which read as a doubled outline around every poster. */
+.preview-card canvas {
+  box-shadow: none;
+  border-radius: var(--radius-md);
+}
+
+.preview-card.is-selected {
+  border-color: var(--hairline);
+  box-shadow: var(--shadow-md);
+}
+
+/* ── Media strip ── */
+
+.cms-media-strip {
+  padding: var(--space-5) var(--space-5) 0;
+}
+
+.cms-media-strip .image-panel {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-5);
+  max-height: none;
+  overflow: visible;
+}
+
+.cms-media-strip .stock-grid {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+.cms-media-strip .stock-grid>* {
+  flex: 0 0 132px;
+}
+
+/* ── Action bar ── */
+
+.cms-actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface);
+  border-top: none;
+  box-shadow: 0 -4px 20px rgba(13, 71, 161, 0.08);
+}
+
+.cms-actionbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cms-autosave {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.78rem;
+  font-weight: 550;
+  color: var(--green);
+  animation: rise-in var(--base) var(--ease-out);
+}
+
+.cms-autosave[hidden] {
+  display: none;
+}
+
+/* ── Card headers ──
+   The reference titles each card. These are already h2/h3 in the markup; they
+   just needed to stop being decorative gradients and start being labels. */
+.controls-panel h1,
+.compose-panel h3,
+.preview-title {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--text-primary);
+}
+
+.compose-panel {
+  padding: var(--space-5);
+}
+
+.compose-panel .publish-panel {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+@media (max-width: 1200px) {
+  .cms-body .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cms-steps {
+    overflow-x: auto;
+  }
+
+  .cms-step-text em {
+    display: none;
+  }
+}
+
+/* ═══ Where the bright blue lives ═══════════════════════════════════════════
+   #2196F3 is the palette's character. It is used on everything that carries
+   no text on top of it — rings, rules, tracks, indicators — so the colour is
+   everywhere the eye lands while the small type keeps the 900 underneath it. */
+
+:focus-visible {
+  outline-color: var(--accent-bright);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent-bright);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+button:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+}
+
+/* Active nav item: the 500 as a solid pill, per the reference. */
+.cms-sidebar .view-tab.active {
+  background: var(--accent-bright);
+  color: #ffffff;
+}
+
+.cms-sidebar .view-tab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.10);
+  color: #ffffff;
+}
+
+/* Stepper: bright rule under the current stage, 900 behind its white number. */
+.cms-step.is-current {
+  border-bottom-color: var(--accent-bright);
+}
+
+.cms-step.is-current .cms-step-num {
+  background: var(--accent);
+}
+
+:root[data-theme="dark"] .cms-step.is-current .cms-step-num {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.cms-step:not(:last-child)::after {
+  background: var(--accent-light);
+}
+
+/* Selection and focus rings on the posters. */
+.preview-card.is-selected {
+  border-color: var(--hairline);
+  box-shadow: var(--shadow-md);
+}
+
+.preview-card:hover {
+  border-color: var(--hairline);
+}
+
+/* Tracks and thumbs — no text, so the 500 is free here. */
+input[type="range"] {
+  accent-color: var(--accent-bright);
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px var(--accent-soft);
+}
+
+/* Segmented / preset controls pick up the light 200 when chosen. */
+.preset-btn.active,
+.mode-btn.active,
+.view-tab:not(.cms-sidebar .view-tab).active {
+  border-color: var(--accent-bright);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Links and inline accents use the 900 — #2196F3 on white is 3.1:1. */
+a {
+  color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-bright);
+}
+
+/* Primary buttons: 900 base so white text clears 8.6:1, brightening to the
+   500 on hover — the colour change reads as the affordance. */
+.btn-primary,
+.btn-ai {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-ai:hover:not(:disabled) {
+  background: var(--accent-dim);
+}
+
+/* Success and the scraped-state banner keep green, but the soft blue fills
+   come from the 50 so nothing introduces a fifth colour. */
+.acc[data-open="true"] {
+  border-color: var(--hairline);
+}
+
+/* Scrollbars in the family. */
+*::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+* {
+  scrollbar-color: var(--hairline) transparent;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Media panel — four peer sections, not four accordions
+   ═══════════════════════════════════════════════════════════════════════════
+
+   In a 300px column, collapsing Adjustments and Filters was right: it kept a
+   long list scannable. Across the full width it is actively wrong. Three
+   collapsed accordions beside one expanded one render as three thin strips
+   next to a tall card, floating in the leftover space — which is exactly the
+   "everything is pieces" problem.
+
+   Width removes the reason to collapse. There is room to show all of it, so
+   all of it is shown: the sections become titled panels of equal weight, laid
+   out on one baseline. The accordion markup and its state attribute stay
+   untouched — this only overrides how they present inside the strip, so the
+   very same elements still collapse normally anywhere else. */
+
+/* Explicit tracks, not auto-fit. auto-fit only collapses tracks that are
+   EMPTY, and the panel title spans 1/-1 — so every track had content in it,
+   nothing collapsed, and the three sections sat at their 230px minimum with
+   two phantom columns of dead space to the right. That gap was the last of
+   the "floating pieces" look.
+
+   The ratio is content-led: Background holds a drop zone, a paste button and
+   the enhance control, Filters holds seven chips and four sliders, and
+   Adjustments is three sliders and nothing else. */
+/* Four equal boxes: Custom Upload · AI Enhance · Adjustments · Filters.
+   Equal rather than content-weighted now that Background has been split —
+   the four hold comparable amounts, and an even row reads as a set of peers
+   instead of one dominant panel with three offcuts beside it. */
+.cms-media-strip .image-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-6);
+  align-items: start;
+}
+
+@media (max-width: 1400px) {
+  .cms-media-strip .image-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .cms-media-strip .image-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The panel title is a heading for the whole strip, not one of its cells. */
+.cms-media-strip .panel-title {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--hairline-2);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* Sections, not toggles: flat, no card chrome, no hit-target styling. */
+.cms-media-strip .acc {
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+  overflow: visible;
+}
+
+/* Real toggles again. Flattening them into static headings was right when
+   this lived across the full page width — there was room to show everything
+   at once. Nested in a 400px column there is not, so being able to close
+   Filters while working the Adjustments sliders matters more than seeing
+   both at once. The chevron comes back because the control is clickable
+   again, and a clickable thing that looks inert is worse than either. */
+.cms-media-strip .acc-head {
+  padding: 0 0 var(--space-3);
+  cursor: pointer;
+  background: none;
+}
+
+.cms-media-strip .acc-head:hover .acc-title {
+  color: var(--accent);
+}
+
+.cms-media-strip .acc-chevron {
+  margin-left: auto;
+}
+
+.cms-media-strip .acc-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* data-open drives them, as it does everywhere else. */
+.cms-media-strip .acc[data-open="true"]>.acc-body {
+  grid-template-rows: 1fr;
+}
+
+.cms-media-strip .acc[data-open="false"]>.acc-body {
+  grid-template-rows: 0fr;
+}
+
+.cms-media-strip .acc>.acc-body>.acc-inner {
+  padding: 0 0 var(--space-2);
+}
+
+/* Suggested images is a filmstrip: it gets the full row and scrolls sideways,
+   rather than being squeezed into a 230px column as a wrapped grid. */
+.cms-media-strip #stock-images-section {
+  grid-column: 1 / -1;
+}
+
+.cms-media-strip #stock-images-section .stock-grid {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: var(--space-2);
+}
+
+.cms-media-strip #stock-images-section .stock-grid>* {
+  flex: 0 0 136px;
+  scroll-snap-align: start;
+}
+
+/* The upload target is the widest thing in here and was setting the row
+   height on its own; capping it keeps the four columns on one baseline. */
+.cms-media-strip .upload-zone {
+  min-height: 128px;
+}
+
+/* Filters' preset chips wrap inside their own column instead of forcing it
+   wide enough for seven in a row. */
+.cms-media-strip #filter-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cms-media-strip #filter-presets .preset-btn {
+  flex: 0 0 auto;
+}
+
+/* ═══ Image controls, under the preview ═════════════════════════════════════
+   They were at the foot of the page, a full screen below the poster they
+   change — you adjusted a slider down there and the result was off-screen.
+   Sitting them under the preview puts the control and its effect in one
+   glance, and fills the gap the short preview card left in that column. */
+
+/* Nested in the preview column, directly under the poster. */
+.preview-panel .cms-media-strip {
+  padding: var(--space-5) 0 0;
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--hairline-2);
+}
+
+.preview-panel .cms-media-strip .image-panel {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* Half the width of the page footer, so two columns rather than four. Custom
+   Upload and Filters are the tall ones and pair on the left; AI Enhance and
+   Adjustments are short and pair on the right. */
+.preview-panel .cms-media-strip .image-panel {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-5);
+}
+
+
+
+/* The row that was blank: Adjustments and Filters both start collapsed, and
+   the panel-title spanning every track meant their cells were reserved even
+   while empty. With the sections force-opened above they fill, but the sliders
+   inside still need a width — they were inheriting a flex basis meant for a
+   narrow sidebar and rendering as zero-width tracks. */
+.cms-media-strip .slider-container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cms-media-strip .slider-container input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cms-media-strip .slider-label {
+  flex: 0 0 auto;
+  min-width: 58px;
+}
+
+/* Zoom stepper. The label keeps its 58px so the - / + line up with the start
+   of the Pan tracks below and the three rows read as one control group. The
+   Adjustments cell is ~238px wide, so the gap here is tighter than the slider
+   rows' and the readout is fixed-width: a bare percentage reflowing between
+   "95%" and "100%" would shove the + button sideways on every click. */
+.cms-media-strip .zoom-stepper {
+  gap: var(--space-2);
+  /* The strip is two columns, so a narrow window can leave this cell around
+     130px. A range track just shrinks; -/+ cannot, so instead of letting the
+     row spill the controls drop below the label as one unit. Wrapping the
+     group rather than the row keeps "- 100% +" from breaking across lines. */
+  flex-wrap: wrap;
+}
+
+.cms-media-strip .zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  /* Right-aligned so the group ends where the Pan tracks below end, which is
+     what makes the three rows read as one column of controls. */
+  margin-left: auto;
+}
+
+.cms-media-strip .zoom-step {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.cms-media-strip .zoom-step:hover:not(:disabled) {
+  background: var(--accent-bright);
+  border-color: var(--accent-bright);
+  color: #222831;
+}
+
+.cms-media-strip .zoom-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Fixed width and tabular figures: a percentage that reflows between "95%"
+   and "100%" would shove the + button sideways on every single click. */
+.cms-media-strip .zoom-readout {
+  flex: 0 0 38px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, var(--text));
+  cursor: pointer;
+}
+
+.cms-media-strip .zoom-readout:hover:not(:disabled) {
+  color: var(--accent-bright);
+}
+
+.cms-media-strip .zoom-readout:disabled {
+  cursor: default;
+  color: var(--text-muted, var(--text));
+}
+
+/* ═══ Teal, placed where it is legible ══════════════════════════════════════
+   Every teal FILL carries #222831, never white — 5.38:1 against 2.76:1. */
+
+.btn-primary,
+.btn-ai {
+  background: var(--accent-bright);
+  color: #222831;
+  font-weight: 700;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-ai:hover:not(:disabled) {
+  background: #00c2cb;
+  color: #222831;
+}
+
+.cms-sidebar .view-tab.active {
+  background: var(--accent-bright);
+  color: #222831;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0, 173, 181, 0.30);
+}
+
+:root[data-theme="dark"] .btn-primary,
+:root[data-theme="dark"] .btn-ai {
+  color: #222831;
+}
+
+/* Outlines, rules and rings — nothing sits on top, so the teal is free. */
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent-bright);
+}
+
+.preview-card.is-selected {
+  border-color: var(--hairline);
+  box-shadow: var(--shadow-md);
+}
+
+.preview-card:hover {
+  border-color: var(--hairline);
+}
+
+.acc[data-open="true"] {
+  border-color: var(--hairline);
+}
+
+input[type="range"] {
+  accent-color: var(--accent-bright);
+}
+
+* {
+  scrollbar-color: var(--hairline) transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+/* Teal as TEXT only where the background is dark enough for it. */
+:root[data-theme="dark"] a {
+  color: var(--accent-bright);
+}
+
+a {
+  color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-bright);
+}
+
+/* ═══ Gold, only where dark ink sits on it ══════════════════════════════════ */
+
+.btn-primary,
+.btn-ai {
+  background: var(--accent);
+  /* forest green — white clears 6.97:1 */
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-ai:hover:not(:disabled) {
+  background: var(--accent-dim);
+}
+
+/* The active nav item is the one place gold earns a solid fill: it is the
+   single thing on the rail that must be found instantly, and dark ink on it
+   reads at 6.1:1. */
+.cms-sidebar .view-tab.active {
+  background: var(--accent-bright);
+  color: #45474b;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(244, 206, 20, 0.28);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent-bright);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.preview-card.is-selected {
+  border-color: var(--hairline);
+  box-shadow: var(--shadow-md);
+}
+
+.acc[data-open="true"] {
+  border-color: var(--hairline);
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+* {
+  scrollbar-color: var(--hairline) transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+  background-clip: content-box;
+}
+
+a {
+  color: var(--accent);
+}
+
+:root[data-theme="dark"] a {
+  color: var(--accent-bright);
+}
+
+/* ═══ Compose column ════════════════════════════════════════════════════════ */
+
+.compose-fields {
+  margin-bottom: var(--space-4);
+}
+
+.compose-fields .acc:last-child {
+  margin-bottom: 0;
+}
+
+/* For a writer the publish form below is hidden, so the column must not keep
+   its separator and spacing for something that is not there. */
+body:not([data-role="qa"]):not([data-role="admin"]) .compose-fields {
+  margin-bottom: 0;
+}
+
+/* ═══ The action bar belongs to Create Pix ══════════════════════════════════
+   Save draft, Publish and New post all act on the post open in the editor.
+   On My posts / Review / Analytics / Writers there is no such post, so the
+   bar was offering three controls that either did nothing or acted on an
+   invisible draft — worst of all Publish, which is the one irreversible
+   action in the app. */
+
+body.view-review .cms-topbar-actions,
+body.view-analytics .cms-topbar-actions,
+body.view-writers .cms-topbar-actions,
+body.view-article .cms-topbar-actions {
+  display: none;
+}
+
+/* ═══ Motion, richer ════════════════════════════════════════════════════════
+   Same restraint, more of it: things arrive from a direction, respond to the
+   pointer with depth, and settle rather than stop. */
+
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* longer tail — reads as settling */
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --fast: 160ms;
+  --base: 280ms;
+  --slow: 460ms;
+}
+
+/* Columns rise and fade in sequence, with a hint of scale so they feel like
+   they come forward rather than slide. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* The sidebar items cascade in on load. */
+.cms-sidebar .view-tab {
+  animation: slide-in-left var(--base) var(--ease-out) both;
+}
+
+.cms-sidebar .view-tab:nth-child(1) {
+  animation-delay: 40ms;
+}
+
+.cms-sidebar .view-tab:nth-child(2) {
+  animation-delay: 80ms;
+}
+
+.cms-sidebar .view-tab:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.cms-sidebar .view-tab:nth-child(4) {
+  animation-delay: 160ms;
+}
+
+/* The active pill grows its highlight from the left rather than snapping. */
+.cms-sidebar .view-tab::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent-bright);
+  transform: translateY(-50%);
+  transition: height var(--base) var(--ease-out);
+}
+
+.cms-sidebar .view-tab:hover:not(.active)::before {
+  height: 60%;
+}
+
+/* Cards lift toward the pointer, shadow deepening with them. */
+.glass-panel {
+  transition: box-shadow var(--slow) var(--ease-out);
+}
+
+.glass-panel:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+/* Inputs settle into focus instead of flicking. */
+input,
+textarea,
+select {
+  transition: background-color var(--base) var(--ease-out),
+    border-color var(--base) var(--ease-out),
+    box-shadow var(--base) var(--ease-out);
+}
+
+/* Accordions: the chevron and the body share one clock, and the contents
+   fade in slightly behind the height so it reads as revealing rather than
+   as a box stretching. */
+.acc-body {
+  transition: grid-template-rows var(--slow) var(--ease-out);
+}
+
+.acc-chevron {
+  transition: transform var(--slow) var(--ease-out);
+}
+
+.acc[data-open="true"]>.acc-body>.acc-inner {
+  animation: fade-in var(--slow) var(--ease-out) 60ms both;
+}
+
+/* The poster cards get the most movement — they are the product. */
+.preview-card {
+  transition: box-shadow var(--base) var(--ease-out);
+}
+
+.preview-card:hover {
+  transform: none;
+}
+
+/* Buttons: press deeper, release with the spring. */
+.btn-primary:active:not(:disabled),
+.btn-ai:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-ghost:active:not(:disabled),
+.btn-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* The autosave tick slides up from the bar as it appears. */
+@keyframes tick-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cms-autosave {
+  animation: tick-in var(--base) var(--spring);
+}
+
+/* The count chip pulses once when it changes, so a writer sees it move. */
+@keyframes count-bump {
+  0% {
+    transform: scale(1);
+  }
+
+  40% {
+    transform: scale(1.14);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.nav-count strong {
+  display: inline-block;
+  transition: color var(--fast) var(--ease-out);
+}
+
+.nav-count.just-changed strong {
+  animation: count-bump 420ms var(--spring);
+}
+
+.nav-count-sep {
+  opacity: 0.45;
+  margin: 0 2px;
+}
+
+/* Everything above is decoration on a UI that works without it. */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ═══ Topbar actions ════════════════════════════════════════════════════════ */
+
+.cms-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-right: var(--space-3);
+  padding-right: var(--space-3);
+  border-right: 1px solid var(--hairline-2);
+}
+
+.cms-topbar-actions .btn-ghost,
+.cms-topbar-actions .btn-primary {
+  padding: 8px 15px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* Publish keeps the most weight — it is the only action here that leaves the
+   building — without becoming the biggest thing in the header. */
+.cms-topbar-actions .btn-primary {
+  font-weight: 700;
+}
+
+.cms-topbar {
+  flex-wrap: wrap;
+  row-gap: var(--space-3);
+}
+
+/* The old footer is gone; anything still targeting it should collapse rather
+   than leave a white band across the foot of the page. */
+.cms-actionbar {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .cms-topbar-actions {
+    border-right: none;
+    padding-right: 0;
+    margin-right: 0;
+  }
+
+  .cms-topbar-actions .cms-autosave {
+    display: none;
+  }
+}
+
+/* ═══ Signed out, nothing of the app is visible ═════════════════════════════
+   styles.css hides .app-shell while a session is unresolved or refused, which
+   was the whole app before this revamp. The sidebar and topbar are new
+   siblings of it, so they were never covered by that rule and stayed on
+   screen behind the login card — showing the nav, the date, and Publish to
+   someone who is not signed in.
+
+   Gated on the same two body classes rather than a new one, so there is one
+   definition of "not signed in" and these cannot drift apart from it. */
+
+body.auth-checking .cms-sidebar,
+body.auth-blocked .cms-sidebar,
+body.auth-checking .cms-topbar,
+body.auth-blocked .cms-topbar,
+body.auth-checking .cms-media-strip,
+body.auth-blocked .cms-media-strip {
+  display: none !important;
+}
+
+/* With the rail gone the grid must not keep a 232px column reserved for it. */
+body.auth-checking .cms-layout,
+body.auth-blocked .cms-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ═══ One publish control, not two ══════════════════════════════════════════
+   QA had Publish in the header and "Publish to DailyMattr" at the foot of the
+   Compose column — the same irreversible action twice, which is exactly the
+   button you do not want someone hitting by accident because they lost track
+   of which one they meant. The original stays in the DOM because the header
+   button proxies its click and all the publish logic hangs off it; it is only
+   removed from view. */
+#dailymattr-publish-btn {
+  display: none;
+}
+
+/* The nav count needs its own breathing room — the numbers are <strong> and
+   were butting straight into their labels. */
+.nav-count strong {
+  margin-right: 1px;
+}
+
+/* Save draft is for reviewers only. A writer's Submit already saves — two
+   buttons doing one thing is a question they have to answer for no reason.
+   Done in CSS, on the same body[data-role] pattern the rest of the app uses,
+   because the JS that mirrors proxy state runs on a timer and kept winning. */
+/* .btn-ghost, specifically. A writer's Submit proxies this SAME control, so
+   an unqualified [data-proxy="save-pix-btn"] matched the primary button too
+   and hid the only action they had. */
+/* Save draft is back for writers now that it means something Submit does not:
+   keep working on this without handing it to QA. */
+
+/* ═══ One accent, used plainly ══════════════════════════════════════════════
+   Nothing here is a workaround: #4D6DE3 carries white on a fill and reads as
+   text on the page at the same 4.56:1, so buttons, links, rings and the active
+   nav item can all simply be the accent. */
+
+.btn-primary,
+.btn-ai {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-ai:hover:not(:disabled) {
+  background: var(--accent-dim);
+}
+
+.cms-sidebar .view-tab.active {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 650;
+  box-shadow: 0 4px 14px rgba(77, 109, 227, 0.34);
+}
+
+:root[data-theme="dark"] .cms-sidebar .view-tab.active {
+  color: #2a2828;
+}
+
+/* Dark mode inverts which of the two is safe on a fill. */
+:root[data-theme="dark"] .btn-primary,
+:root[data-theme="dark"] .btn-ai {
+  background: var(--accent);
+  color: #2a2828;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.preview-card.is-selected {
+  border-color: var(--hairline);
+  box-shadow: var(--shadow-md);
+}
+
+.preview-card:hover {
+  border-color: var(--hairline);
+}
+
+.acc[data-open="true"] {
+  border-color: var(--hairline);
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+a {
+  color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-deep);
+}
+
+:root[data-theme="dark"] a:hover {
+  color: var(--accent-light);
+}
+
+* {
+  scrollbar-color: var(--hairline) transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+/* The accent clears 4.56:1 on white, but the upload zone is a tinted well —
+   on that slightly darker fill the same colour drops to 4.22:1. Accent text
+   sitting on a tinted surface takes the deeper step. */
+.upload-zone em,
+.upload-text em,
+.surface-input a,
+.upload-zone a {
+  color: var(--accent-deep);
+}
+
+:root[data-theme="dark"] .upload-zone em,
+:root[data-theme="dark"] .upload-text em {
+  color: var(--accent);
+}
+
+/* ═══ Stale dark literals from styles.css ═══════════════════════════════════
+   styles.css carries a block of ":root[data-theme=dark] .selector { literal }"
+   rules from the original navy theme. They outrank a plain .selector here on
+   specificity, so the panels and nav kept painting #14131e no matter what the
+   tokens said — the dark theme was half this palette and half the old one.
+   Matched selector-for-selector so the token wins. */
+
+:root[data-theme="dark"] .glass-panel {
+  background: var(--surface);
+}
+
+:root[data-theme="dark"] .app-nav,
+:root[data-theme="dark"] .cms-topbar {
+  background: var(--surface);
+}
+
+:root[data-theme="dark"] h1 {
+  background: none;
+  -webkit-background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+  color: var(--text-primary);
+}
+
+/* ═══ Collapsible rail ══════════════════════════════════════════════════════ */
+
+.cms-nav-collapse {
+  position: absolute;
+  top: 26px;
+  right: -11px;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--base) var(--spring),
+    background-color var(--fast) var(--ease-out),
+    color var(--fast) var(--ease-out);
+}
+
+.cms-sidebar {
+  position: sticky;
+}
+
+/* the toggle anchors to it */
+.cms-nav-collapse:hover {
+  background: var(--accent);
+  color: #fff;
+  transform: scale(1.12);
+}
+
+.cms-nav-collapse:active {
+  transform: scale(0.94);
+}
+
+/* The chevron is the state: it points at where the rail will go. */
+body.nav-collapsed .cms-nav-collapse svg {
+  transform: rotate(180deg);
+}
+
+.cms-nav-collapse svg {
+  transition: transform var(--base) var(--ease-out);
+}
+
+/* The rail width is driven by a variable, not by re-declaring the track list.
+   Transitioning `grid-template-columns` between "232px minmax(0,1fr)" and
+   "66px minmax(0,1fr)" does not interpolate — minmax() is not animatable —
+   and the declaration was being dropped rather than snapped, so the labels
+   hid while the column stayed 232px wide. Animating a length that the track
+   list reads is both simpler and actually smooth. */
+:root {
+  --rail-w: 232px;
+}
+
+body.nav-collapsed {
+  --rail-w: 66px;
+}
+
+.cms-layout {
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  transition: none;
+}
+
+.cms-sidebar {
+  transition: width var(--base) var(--ease-out), padding var(--base) var(--ease-out);
+}
+
+body.nav-collapsed .cms-brand-text,
+body.nav-collapsed .cms-side-badge,
+body.nav-collapsed .cms-sidebar .view-tab span,
+body.nav-collapsed .cms-side-link span {
+  display: none;
+}
+
+body.nav-collapsed .cms-sidebar {
+  padding-inline: 9px;
+}
+
+body.nav-collapsed .cms-brand {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+body.nav-collapsed .cms-sidebar .view-tab,
+body.nav-collapsed .cms-side-link {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+/* Collapsed, the label has to come back on hover or the icons are a guess. */
+body.nav-collapsed .cms-sidebar .view-tab::after {
+  content: attr(data-view);
+  position: absolute;
+  left: calc(100% + 10px);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--text-primary);
+  color: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-4px);
+  transition: opacity var(--fast) var(--ease-out), transform var(--fast) var(--ease-out);
+  box-shadow: var(--shadow-md);
+}
+
+body.nav-collapsed .cms-sidebar .view-tab:hover::after {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Below the tablet breakpoint the rail is already an icon strip, and on
+   mobile it is a bottom bar — a collapse control would fight both. */
+@media (max-width: 1000px) {
+  .cms-nav-collapse {
+    display: none;
+  }
+}
+
+/* A draft is not a verdict — it is work that has not been handed over — so it
+   reads as neutral rather than as a state QA has acted on. */
+.status-pill.is-draft {
+  background: var(--surface-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--hairline);
+}
+
+/* ═══ AI Enhance sits on the top row ════════════════════════════════════════
+   The strip is two columns, so source order alone would leave the second row
+   below the fold of a 400px column, under two tall boxes.
+
+   AI Enhance used to be put down there, on the reasoning that it was the
+   occasional paid step while zoom and pan were what you reach for straight
+   after dropping an image in. That reasoning belonged to a build where every
+   writer could enhance. Now only QA can, and for QA it is not the occasional
+   step — it is the whole job on the image: look at what the writer sent,
+   decide whether it needs enhancing, enhance it, publish. Burying the one
+   control they came for under a fold is backwards, so it moves up beside
+   Custom Upload and Adjustments takes the second row.
+
+   Writers never see the AI Enhance box at all (.qa-only), and a hidden box
+   takes no grid cell — so their strip reads Adjustments | Custom Upload over
+   Filters, with nothing left standing where the hidden box was.
+
+   Targeted by content rather than by position — :has() on a control each
+   section owns — so re-ordering the markup later cannot silently scramble
+   this the way nth-child would. */
+
+/* The top row carries the two controls that get used on every picture:
+   Adjustments to frame it and AI Super Resolution to clean it up. Custom
+   Upload is how a picture arrives ONCE and Filters is a finishing touch, so
+   they take the second row. The strip is two columns, so promoting
+   Adjustments does not cost Super Resolution its place above the fold. */
+.cms-media-strip .image-panel>.acc:has(#img-zoom) {
+  order: 1;
+}
+
+.cms-media-strip .image-panel>.acc:has(#ai-enhance-btn) {
+  order: 2;
+}
+
+.cms-media-strip .image-panel>.acc:has(#bg-upload-zone) {
+  order: 3;
+}
+
+.cms-media-strip .image-panel>.acc:has(#filter-presets) {
+  order: 4;
+}
+
+.cms-media-strip .image-panel>#stock-images-section {
+  order: 5;
+}
+
+.cms-media-strip .image-panel>.panel-title {
+  order: 0;
+}
+
+/* ═══ Review stats ══════════════════════════════════════════════════════════
+   Five numbers used to share one line of small grey text, read as prose. Each
+   gets a tile now: the figure first at a size you can read across the room,
+   its label under it. Auto-fit rather than fixed columns so the row reflows
+   instead of scrolling when a writer has drafts and a reviewer does not. */
+
+.review-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-4) 0 var(--space-5);
+}
+
+.review-stats[hidden] {
+  display: none;
+}
+
+.review-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  transition: border-color var(--fast) var(--ease-out),
+    transform var(--base) var(--ease-out);
+}
+
+.review-stat:hover {
+  transform: translateY(-1px);
+  border-color: var(--hairline);
+}
+
+.review-stat-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.review-stat-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Colour only where a verdict is being reported. Today and this week are
+   neutral — they are volume, not judgement, and tinting them would imply
+   something is good or bad about the number. */
+.review-stat.is-approved .review-stat-value {
+  color: var(--green);
+}
+
+.review-stat.is-rejected .review-stat-value {
+  color: var(--red);
+}
+
+.review-stat.is-awaiting .review-stat-value {
+  color: var(--accent);
+}
+
+.review-stat.is-draft .review-stat-value {
+  color: var(--text-secondary);
+}
+
+/* Publishing is the act that leaves the building, so it reads as the accent
+   rather than as another verdict colour — approved/rejected are judgements
+   about a post, published is what happened to it. */
+.review-stat.is-published .review-stat-value {
+  color: var(--accent);
+}
+
+/* ═══ Published is a state, not a verdict ═══════════════════════════════════
+   Publishing auto-approves, so every published post also carries the approved
+   flag and the queue drew the two identically — a live story was
+   indistinguishable from one merely signed off, which is why a correction had
+   nowhere to start. It takes the accent for the same reason the tile does:
+   approved and rejected are judgements about a post, published is what
+   happened to it. */
+.review-item.is-published {
+  border-color: var(--accent-glow);
+  background: var(--accent-soft);
+}
+
+.status-pill.is-published {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-glow);
+}
+
+/* More than one copy of this story is on the public site and only the newest
+   carries the correction. That is a mess someone has to clear up by hand, so
+   it reads as a warning rather than as another piece of status. */
+.status-pill.is-superseded {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+/* The filter group was five tabs in a fixed inline-flex row that neither wraps
+   nor scrolls. Published makes six, and six do not fit beside the search box
+   on a laptop or inside the column on a phone — the last tab is exactly the
+   one that would be clipped off the end, which for a control nobody has seen
+   before is indistinguishable from it never having shipped.
+
+   Wrap rather than scroll: a wrapped second row is visible without being
+   discovered, and a horizontal scroll area with no scrollbar is how the tab
+   would stay hidden from the person looking for it. */
+.review-filters {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
