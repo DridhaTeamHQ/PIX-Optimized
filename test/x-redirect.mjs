@@ -27,7 +27,8 @@ await check("one redirect, only inside the X preview", () => {
 await check("redirect follows the X download beneath the canvas", () => {
   const download = link.prev();
   assert.equal(download.attr("data-download"), "x");
-  assert.equal(download.prev().find("#x-canvas").length, 1);
+  // The X buttons sit in one row (.x-card-actions) directly under the canvas.
+  assert.equal(download.parent().prev().find("#x-canvas").length, 1);
 });
 await check("redirect opens the X composer", () => {
   assert.equal(link.attr("href"), "https://x.com/intent/tweet");

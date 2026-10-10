@@ -4414,6 +4414,9 @@ function paintPoster() {
 
   // AI Enhance is only meaningful once a real background image is loaded
   const enhanceBtn = document.getElementById("ai-enhance-btn");
+  syncReframeUI();
+  const freeBtn = document.getElementById("free-upscale-btn");
+  if (freeBtn && !freeBtn.classList.contains("working")) freeBtn.disabled = !state.mainImage;
   if (enhanceBtn && !enhanceBtn.classList.contains("working")) {
     enhanceBtn.disabled = !state.mainImage;
   }
@@ -9183,6 +9186,23 @@ if (copyAllBtn) {
 /* ═══════════════════════ AI Enhance (gpt-image-1) ═══════════════════════ */
 
 const aiEnhanceBtn    = document.getElementById("ai-enhance-btn");
+const aiReframeBtn    = document.getElementById("ai-reframe-btn");
+/* Reframe is a paid full redraw, so each pix (page) gets two. Counted on
+   success only; the server holds the same cap per user and page. */
+const REFRAME_LIMIT_PER_PIX = 2;
+const reframeUses = new Map();
+function reframesLeft(page) {
+  if (!page) return 0;
+  return Math.max(0, REFRAME_LIMIT_PER_PIX - (reframeUses.get(page.id) || 0));
+}
+function syncReframeUI() {
+  const btn = document.getElementById("ai-reframe-btn");
+  if (!btn || btn.classList.contains("working")) return;
+  const left = reframesLeft(activePage());
+  const label = btn.querySelector(".reframe-label");
+  if (label) label.textContent = left > 0 ? `Reframe (${left} left)` : "Reframe (limit reached)";
+  btn.disabled = !state.mainImage || left <= 0;
+}
 const aiEnhanceStatus = document.getElementById("ai-enhance-status");
 
 function setEnhanceStatus(msg, kind) {
@@ -9229,6 +9249,10 @@ function enhanceError(payload, status) {
 }
 
 const MODEL_CEILING_PX = 1536;
+/* AI Upscale (restore) uploads at most this long edge. OpenAI bills the
+   uploaded photo by its size, and that upload is the biggest part of a
+   restore's cost; 1024 still covers the 920px poster slot. */
+const RESTORE_UPLOAD_PX = 1024;
 const RATIO_ASPECTS = { "9:16": 9 / 16, "4:5": 4 / 5, "1:1": 1, "16:9": 16 / 9 };
 
 /* The only aspects gpt-image can return: 1024x1024, 1024x1536, 1536x1024.
@@ -9262,7 +9286,7 @@ const ENHANCE_WORKING = {
   auto:    "Reading the photograph, then either recovering detail or extending it to fill the frame (30–90s)…",
   restore: "Restoring and upscaling — analysing the photo, then recovering detail (30–90s)…",
   expand:  "Expanding — reading how the photo is cropped, then drawing the scene outward (30–90s)…",
-  reframe: "Reframing — redrawing the whole picture at the poster's shape, high quality (60–120s)…",
+  reframe: "Reframing — redrawing the whole picture at the poster's shape (60–120s)…",
 };
 
 /* Pull back is the distance to zoom out, and it only means anything when a
@@ -9276,9 +9300,9 @@ const ENHANCE_WORKING = {
    reads it before picking is told the wrong thing about the option they are
    about to pick, so it has to move with the selector. */
 const ENHANCE_MODE_HINTS = {
-  auto: "Runs Reframe & Upscale: the whole picture redrawn at the poster's shape, high quality. Uses paid AI credits.",
-  restore: "Recovers detail at exactly the framing you set by REDRAWING the picture at up to 1536px — faces and fine detail come back recognisably the same, not pixel-identical, and a photo already above 1536px is left alone. Uses paid AI credits.",
-  reframe: "The same thing as asking ChatGPT to 'upscale and reframe it to 9:16': one gpt-image-1.5 call at HIGH quality redraws the whole scene at the poster's shape, seamless, with more of the setting above and below. It is a regeneration — faces and fine detail come back recognisably the same, not pixel-identical. Use Expand to keep the photograph pinned exactly. About $0.33 a picture, measured — the uploaded photo is billed as well as the output.",
+  auto: "Runs Reframe: the whole picture redrawn at the poster's shape. Uses paid AI credits.",
+  restore: "AI Upscale improves THIS photo — sharper detail, less noise and blur, same framing, same people. OpenAI rebuilds the pixels, so faces come back recognisably the same rather than pixel-identical. Sends the photo at 1024px to keep the cost down. Paid, roughly $0.10 a click. Try Free Upscale first.",
+  reframe: "The same thing as asking ChatGPT to 'upscale and reframe it to 9:16': one gpt-image-1.5 call at medium quality redraws the whole scene at the poster's shape, seamless, with more of the setting above and below. It is a regeneration — faces and fine detail come back recognisably the same, not pixel-identical. Use Expand to keep the photograph pinned exactly. About $0.12-0.15 a picture — the uploaded photo is billed as well as the output.",
   expand: "Draws new scene outward past the edges of the photograph to fill the poster. The original is pinned in place by a mask, but the margin is generated — check the result before publishing. Costs more than Restore.",
 };
 
@@ -9974,13 +9998,17 @@ function composeExpandResult(resultImg, srcCanvas, baseFrame, place, scale = 1, 
   return out;
 }
 
-async function runImageAI() {
-  const btn = aiEnhanceBtn;
-  const requestedMode = enhanceModeSel?.value || "auto";
+async function runImageAI(modeOverride) {
+  const btn = modeOverride === "reframe" ? aiReframeBtn : aiEnhanceBtn;
+  const requestedMode = modeOverride || enhanceModeSel?.value || "restore";
   const img = state.mainImage;
-  if (!img) return;
+  if (!img || !btn) return;
   // Whose picture this is. Read before the first await — see the commit below.
   const enhanceOwner = activePage();
+  if (requestedMode === "reframe" && reframesLeft(enhanceOwner) <= 0) {
+    setEnhanceStatus(`Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.`);
+    return;
+  }
   /* Before anything is spent. Taken here rather than beside the commit so the
      slot exists even if the call fails halfway — and taken from the same page
      the result will be committed to, not from whatever is selected when it
@@ -10044,7 +10072,13 @@ async function runImageAI() {
        silently applied a brightness change instead of the reframe they asked
        for. Auto goes through too: only the server's planner knows which job
        it will resolve to, so deciding here would be guessing. */
-    const bigEnough = longEdge >= MODEL_CEILING_PX && requestedMode === "restore";
+    /* Never skip any more. AI Upscale is the reviewer asking for better
+       QUALITY (cleaner detail, less noise and blocking), not only more
+       pixels, so a large photo is worth restoring too. It goes up capped at
+       MODEL_CEILING_PX and comes back at up to 1536px, which still covers the
+       920px poster slot. `longEdge` is kept for the log line below. */
+    void longEdge;
+    const bigEnough = false;
     const auto = autoFilterFor(img);
     const toneHelps = !!auto && !(auto.brightness === 100 && auto.contrast === 100 && auto.saturation === 100);
 
@@ -10119,7 +10153,8 @@ async function runImageAI() {
        So stage 1 gets the picture as it is — it needs the true shape to
        reason about crop loss — and the trim happens below, against the mode
        that actually resolved. See cropToModelShape below. */
-    const cappedScale = Math.min(1, MODEL_CEILING_PX / Math.max(rawW, rawH));
+    const uploadCeiling = requestedMode === "restore" ? RESTORE_UPLOAD_PX : MODEL_CEILING_PX;
+    const cappedScale = Math.min(1, uploadCeiling / Math.max(rawW, rawH));
     const tmp = document.createElement("canvas");
     tmp.width  = Math.round(rawW * cappedScale);
     tmp.height = Math.round(rawH * cappedScale);
@@ -10307,6 +10342,7 @@ async function runImageAI() {
     form.append("description", plan.description || "");
     form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
     form.append("posterRatio", state.aspectRatio || "");
+    form.append("pageId", enhanceOwner?.id || "");
     form.append("size", plan.size || "auto");
     form.append("decidedBy", plan.decidedBy || "caller");
     form.append("reason", plan.reason || "");
@@ -10321,6 +10357,9 @@ async function runImageAI() {
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw enhanceError(data, resp.status);
     if (!data.image) throw new Error("No image returned.");
+    if (requestedMode === "reframe" && enhanceOwner) {
+      reframeUses.set(enhanceOwner.id, (reframeUses.get(enhanceOwner.id) || 0) + 1);
+    }
 
     /* A second round trip, and a cheap one: the answer above carried an
        address, not the picture. A failure here costs nothing and can be
@@ -10501,6 +10540,7 @@ async function runImageAI() {
   } finally {
     btn.classList.remove("working");
     btn.disabled = !state.mainImage;
+    syncReframeUI();
     // Re-read after "working" comes off: syncImageUndoUI() greys the undo out
     // for the duration of a call, and nothing else would put it back on the
     // failure path.
@@ -10509,6 +10549,58 @@ async function runImageAI() {
 }
 
 if (aiEnhanceBtn) aiEnhanceBtn.addEventListener("click", () => runImageAI());
+if (aiReframeBtn) aiReframeBtn.addEventListener("click", () => runImageAI("reframe"));
+
+/* Free Upscale: ffmpeg on our own server, no OpenAI, no cost. Sends the
+   picture at its native size and puts the enlarged copy back on the same
+   page, keeping the writer's zoom and pan. Undo AI Enhance reverts it too. */
+async function runFreeUpscale() {
+  const btn = document.getElementById("free-upscale-btn");
+  const img = state.mainImage;
+  if (!btn || !img) return;
+  const owner = activePage();
+  rememberImageBeforeAI(owner, img);
+  btn.disabled = true;
+  btn.classList.add("working");
+  setEnhanceStatus("Free Upscale — restoring detail on our own server. This can take up to 2 minutes, no OpenAI cost…");
+  try {
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth || img.width;
+    c.height = img.naturalHeight || img.height;
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+    if (!blob) throw new Error("Could not read the picture.");
+    const form = new FormData();
+    form.append("width", String(c.width));
+    form.append("height", String(c.height));
+    form.append("image", blob, "source.png");
+    const resp = await fetch("/api/free-upscale", { method: "POST", body: form });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.image) throw new Error(data.error || `Free Upscale failed (${resp.status}).`);
+    const out = new Image();
+    await new Promise((resolve, reject) => {
+      out.onload = resolve;
+      out.onerror = () => reject(new Error("Upscaled image failed to load."));
+      out.src = data.image;
+    });
+    noteAIImage(owner, out);
+    await ensureImageFocalPoint(out);
+    commitFieldToPage(owner, "mainImage", out);
+    const how = data.ai ? "AI detail restore" : "enlarge + sharpen";
+    const grew = out.width > c.width;
+    setEnhanceStatus(grew
+      ? `Free Upscale done (${how}) — ${c.width}x${c.height} → ${out.width}x${out.height}, no OpenAI cost.`
+      : `Already high resolution (${c.width}x${c.height}) — sharpened only, no OpenAI cost.`);
+  } catch (err) {
+    setEnhanceStatus(err.message || "Free Upscale failed.");
+  } finally {
+    btn.classList.remove("working");
+    btn.disabled = !state.mainImage;
+    syncImageUndoUI();
+  }
+}
+document.getElementById("free-upscale-btn")?.addEventListener("click", () => runFreeUpscale());
+syncReframeUI();
 
 const imageUndoBtn = document.getElementById("image-undo-btn");
 if (imageUndoBtn) imageUndoBtn.addEventListener("click", () => revertImageToOriginal());

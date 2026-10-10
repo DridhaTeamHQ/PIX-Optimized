@@ -210,8 +210,10 @@ const gptImageDisabled = /^(1|true|yes)$/i.test(env("DISABLE_GPT_IMAGE"));
    log line goes stale the moment someone edits the variable — which is how
    you end up reassured by a message that is quietly wrong. */
 function enhanceCostLabel() {
-  const q = (process.env.IMAGE_QUALITY || "medium").toLowerCase();
-  const rq = (process.env.IMAGE_QUALITY_REFRAME || "high").toLowerCase();
+  // "high" is clamped to medium in runEnhanceEdit, so report what runs.
+  const clamp = (v) => (v === "high" ? "medium" : v);
+  const q = clamp((process.env.IMAGE_QUALITY || "medium").toLowerCase());
+  const rq = clamp((process.env.IMAGE_QUALITY_REFRAME || "medium").toLowerCase());
   // Measured, not the price-table figure: input_fidelity=high bills the
   // uploaded photograph (~6.5k image tokens) on top of the output.
   const rper = { low: "~$0.02", medium: "~$0.12", high: "~$0.33" }[rq] || "cost unknown";
@@ -474,6 +476,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/api/generate-article") {
     await handleGenerateArticle(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/free-upscale") {
+    await handleFreeUpscale(req, res);
     return;
   }
 
@@ -5136,7 +5143,7 @@ const ENHANCE_SIZES = new Set(["1024x1024", "1024x1536", "1536x1024", "auto"]);
 
    ENHANCE_RATE_MAX is generous on purpose. A reviewer doing real work will
    not reach it; something looping will reach it in seconds. */
-const ENHANCE_RATE_MAX = Number(process.env.ENHANCE_RATE_MAX) || 40;
+const ENHANCE_RATE_MAX = Number(process.env.ENHANCE_RATE_MAX) || 10;
 const ENHANCE_RATE_WINDOW_MS = 60 * 60_000;
 const enhanceLimiter = createRateLimiter({
   windowMs: ENHANCE_RATE_WINDOW_MS,
@@ -5176,8 +5183,8 @@ function capFromEnv(name, fallback) {
   }
   return n;
 }
-const SPEND_CAP_USD_HOUR = capFromEnv("SPEND_CAP_USD_HOUR", 20);
-const SPEND_CAP_USD_DAY = capFromEnv("SPEND_CAP_USD_DAY", 60);
+const SPEND_CAP_USD_HOUR = capFromEnv("SPEND_CAP_USD_HOUR", 3);
+const SPEND_CAP_USD_DAY = capFromEnv("SPEND_CAP_USD_DAY", 10);
 const spendGuard = createSpendGuard([
   { name: "hour", ms: 60 * 60_000, capUsd: SPEND_CAP_USD_HOUR },
   { name: "day", ms: 24 * 60 * 60_000, capUsd: SPEND_CAP_USD_DAY },
@@ -5503,20 +5510,27 @@ async function runEnhanceEdit({
 
      IMAGE_QUALITY still overrides per deployment, in both directions, and the
      boot log states the tier actually in force. */
-  /* Reframe renders HIGH by default, separately from the rest. It is the
+  /* Reframe defaults to MEDIUM (~$0.12 vs ~$0.33 at high) to keep the OpenAI
+     bill down; set IMAGE_QUALITY_REFRAME=high to get the old behaviour back.
+     Original note: reframe was HIGH by default, separately from the rest. It is the
      job whose output IS the picture — every pixel on the poster is the
      model's — and at medium the leaves, water and skin that make a redrawn
      scene believable come back soft. High is what ChatGPT spends on the same
      request, and the comparison that prompted this was made against it.
      ~$0.20 against ~$0.05; the status line says what each press cost.
      IMAGE_QUALITY_REFRAME overrides it on its own. */
-  const quality = (mode === "reframe"
-    ? (process.env.IMAGE_QUALITY_REFRAME || "high")
+  let quality = (mode === "reframe"
+    ? (process.env.IMAGE_QUALITY_REFRAME || "medium")
     : (process.env.IMAGE_QUALITY || "medium")).toLowerCase();
+  /* "high" is switched off in code, for every job: it cost ~$0.33 a press
+     against ~$0.12 at medium, and a variable left at "high" on any
+     deployment must not bring that back. Medium is the ceiling. */
+  if (quality === "high") {
+    console.warn("⚠ IMAGE_QUALITY(_REFRAME)=high is disabled in code — using medium.");
+    quality = "medium";
+  }
   if (quality === "low") {
     console.warn("⚠ IMAGE_QUALITY=low — faces come back smooth and clay-like. medium is the intended floor.");
-  } else if (quality === "high" && mode !== "reframe") {
-    console.warn("⚠ IMAGE_QUALITY=high — roughly 4× the price of medium (~$0.20 vs ~$0.05 per enhance).");
   }
 
   /* An expand whose frame was not built by the caller cannot be done here.
@@ -6029,14 +6043,36 @@ async function enhanceSpendGate(req, res) {
    caller is handing back, and runs it. Nothing is decided here — a field that
    does not parse falls to the conservative value rather than to a 400, for
    the same reason the mode header does. */
+const REFRAME_LIMIT_PER_PIX = Number(process.env.REFRAME_LIMIT_PER_PIX) || 2;
+// In memory: resets on redeploy, which is fine for a per-pix cap.
+const reframeCounts = new Map();
+
 async function handleEnhanceEditStage(req, res) {
   const blocked = enhanceBlocked();
   if (blocked) { sendJson(res, blocked.status, { error: blocked.error }); return; }
 
-  const onCharge = await enhanceSpendGate(req, res);
-  if (!onCharge) return;
-
   const { image, mask, fields } = await readEnhanceEdit(req);
+
+  /* Reframe is the costly job: two per pix (page), per user. Checked before
+     the spend gate so a refused press reserves nothing. */
+  const isReframe = String(fields.mode || "").toLowerCase() === "reframe";
+  let reframeKey = null;
+  if (isReframe) {
+    const user = await currentUser(req);
+    const who = user?.username ? `u:${user.username}` : `ip:${clientKey(req)}`;
+    reframeKey = `${who}|${String(fields.pageId || "").slice(0, 100)}`;
+    if ((reframeCounts.get(reframeKey) || 0) >= REFRAME_LIMIT_PER_PIX) {
+      sendJson(res, 429, { error: `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.` });
+      return;
+    }
+  }
+
+  const gateCharge = await enhanceSpendGate(req, res);
+  if (!gateCharge) return;
+  const onCharge = (usd) => {
+    if (reframeKey) reframeCounts.set(reframeKey, (reframeCounts.get(reframeKey) || 0) + 1);
+    return gateCharge(usd);
+  };
   const rawSize = String(fields.size || "auto");
   const rawAmount = String(fields.amount || "moderate").toLowerCase();
   const rawSubject = String(fields.subject || "people").toLowerCase();
@@ -6111,6 +6147,189 @@ async function handleEnhanceSingleShot(req, res) {
   });
 
   sendJson(res, 200, payload);
+}
+
+/* ── Free Upscale ───────────────────────────────────────────────
+   Restored from before 4376ef6: Lanczos enlarge + unsharp/CAS sharpen in
+   ffmpeg. No OpenAI call, so it costs nothing and never touches the spend
+   guard. It cannot invent detail, but it cannot invent a face either. */
+const UPSCALE_MAX_LONG_EDGE = Number(env("UPSCALE_MAX_LONG_EDGE") || 2048);
+
+/* Two sharpeners, because one of them alone does not show.
+
+   CAS is adaptive and deliberately gentle — that is its virtue on hard edges
+   and its problem as the only stage. Measured on a soft 420px source enlarged
+   to 840px, against the same resize with no sharpening at all:
+
+     cas 0.45 (the old default)      +2.4% edge energy
+     cas 0.60                        +3.1%
+     cas 0.80                        +4.8%
+     unsharp 1.2                    +10.7%
+     unsharp 1.2 + cas 0.4          +15.7%   ← this
+     cas 1.00                       +26.5%   (its whole range in the last step)
+
+   A 2% lift is invisible, which is why "it is not enhancing" was a fair
+   report even once the resampler was right: the pipeline was doing almost
+   nothing a viewer could see. Unsharp supplies the visible lift and CAS adds
+   edge crispness on top without the halos unsharp leaves when pushed alone —
+   neither is run hard enough to ring. No pixel was driven to 0 or 255 by any
+   chain above, this one included.
+
+   Both are knobs because the right amount depends on the source, and a news
+   photo that is already crisp wants less than a soft scrape. */
+const UPSCALE_SHARPEN = env("UPSCALE_SHARPEN") || "0.4";     // CAS strength, 0..1
+const UPSCALE_UNSHARP = env("UPSCALE_UNSHARP") || "1.2";     // unsharp luma amount
+
+// 5x5 is the standard kernel for this: wide enough to catch a real edge,
+// narrow enough not to smear a halo across it. Chroma is left alone —
+// sharpening colour channels buys nothing and amplifies compression blotches.
+const SHARPEN_CHAIN = `unsharp=5:5:${UPSCALE_UNSHARP}:5:5:0,cas=strength=${UPSCALE_SHARPEN}`;
+
+async function upscaleLocally(buffer, mime) {
+  if (!ffmpegAvailable) return null;
+
+  const job = randomUUID().replace(/-/g, "");
+  const dir = join(tmpdir(), `pix-upscale-${job}`);
+  mkdirSync(dir, { recursive: true });
+  const ext = mime === "image/jpeg" ? "jpg" : "png";
+  const inPath = join(dir, `in.${ext}`);
+  const outPath = join(dir, "out.png");
+
+  try {
+    writeFileSync(inPath, buffer);
+
+    const probe = await run("ffprobe", [
+      "-v", "error", "-select_streams", "v:0",
+      "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", inPath,
+    ], 20_000);
+    const [w, h] = probe.stdout.toString("utf-8").trim().split("x").map(Number);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w < 2 || h < 2) {
+      console.warn("⚠ upscale: could not read image dimensions");
+      return null;
+    }
+
+    /* 2x, but never past the cap — the poster renders into a 920px slot and
+       DailyMattr re-encodes on top of that, so pixels beyond this are paid for
+       in bytes and thrown away downstream.
+
+       The `>= 1.5` is the part that matters, and it is why this is not simply
+       `min(2, cap/longEdge)`: that form enlarged a 1682px image to exactly
+       2048 — a 1.22x stretch that adds no detail a viewer can see and 40% more
+       bytes to carry it, on an image that was already big enough. Resampling
+       only earns its cost as a real enlargement; below that threshold the
+       honest answer is to leave the geometry alone and just sharpen, which is
+       what an already-large source actually needs.
+
+       Never below 1: this route enlarges or leaves alone, and silently
+       shrinking someone's upload would be a strange way to answer "enhance". */
+    const longEdge = Math.max(w, h);
+    const headroom = UPSCALE_MAX_LONG_EDGE / longEdge;
+    const factor = headroom > 1.02 ? Math.min(2, headroom) : 1;
+    const outW = Math.round(w * factor / 2) * 2;   // even dimensions keep every encoder happy
+    const outH = Math.round(h * factor / 2) * 2;
+
+    // hqdn3d first: a light denoise so the sharpeners lift detail rather
+    // than JPEG blocking and sensor noise.
+    const filters = factor > 1.01
+      ? `hqdn3d=1.5:1.5:3:3,scale=${outW}:${outH}:flags=lanczos+accurate_rnd+full_chroma_int,${SHARPEN_CHAIN}`
+      : SHARPEN_CHAIN;
+
+    const t0 = Date.now();
+    const enc = await run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-y", "-i", inPath,
+      "-vf", filters, "-frames:v", "1", outPath,
+    ], 60_000);
+
+    if (enc.code !== 0 || !existsSync(outPath)) {
+      console.warn(`⚠ upscale failed: ${enc.stderr.toString("utf-8").slice(-200)}`);
+      return null;
+    }
+
+    const out = readFileSync(outPath);
+    if (!out.length) return null;
+    console.log(
+      `✓ upscaled ${w}x${h} → ${outW}x${outH} ` +
+      `(lanczos + unsharp ${UPSCALE_UNSHARP} + cas ${UPSCALE_SHARPEN}) ` +
+      `in ${Date.now() - t0}ms, ${(out.length / 1048576).toFixed(2)} MB`,
+    );
+    return {
+      dataUrl: `data:image/png;base64,${out.toString("base64")}`,
+      engine: `lanczos+sharpen ${outW}x${outH}`,
+    };
+  } catch (err) {
+    console.warn(`⚠ upscale error: ${err.message}`);
+    return null;
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* temp dir */ }
+  }
+}
+
+/* The quality path: the self-hosted Real-ESRGAN service in upscaler/,
+   deployed as its own Railway service. Learned super-resolution recovers
+   texture the resampler cannot, and it runs on Railway CPU — no OpenAI. Slow
+   (30-120 s on CPU), which is why it is only used where it helps: sources
+   below FREE_AI_MAX_EDGE. Returns null when unset/unreachable so the caller
+   falls back to the local resampler. */
+const FREE_AI_MAX_EDGE = Number(env("FREE_AI_MAX_EDGE") || 1024);
+async function tryAiUpscaler(buffer, mime) {
+  const base = (env("UPSCALER_URL")).replace(/\/+$/, "");
+  if (!base) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 285_000);
+  try {
+    const r = await fetch(`${base}/enhance`, {
+      method: "POST",
+      headers: { "Content-Type": mime, "X-Secret": env("UPSCALER_SECRET") },
+      body: buffer,
+      signal: ctrl.signal,
+    });
+    if (!r.ok) {
+      console.warn(`⚠ AI upscaler ${r.status} — using the local resampler`);
+      return null;
+    }
+    const out = Buffer.from(await r.arrayBuffer());
+    if (out.length < 1000) return null;
+    return {
+      dataUrl: `data:image/png;base64,${out.toString("base64")}`,
+      engine: r.headers.get("x-engine") || "real-esrgan",
+    };
+  } catch (e) {
+    console.warn("⚠ AI upscaler unreachable — using the local resampler:", e.message);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function handleFreeUpscale(req, res) {
+  try {
+    const { image, fields } = await readEnhanceEdit(req);
+    if (!image?.buffer?.length) { sendJson(res, 400, { error: "An image is required." }); return; }
+    const t0 = Date.now();
+    const longEdge = Math.max(Number(fields?.width) || 0, Number(fields?.height) || 0);
+    if (longEdge && longEdge < FREE_AI_MAX_EDGE) {
+      const ai = await tryAiUpscaler(image.buffer, image.mime);
+      if (ai) {
+        console.log(`✓ free upscale via ${ai.engine} in ${Date.now() - t0}ms (self-hosted, no OpenAI)`);
+        sendJson(res, 200, { image: ai.dataUrl, engine: ai.engine, ai: true });
+        return;
+      }
+    }
+    const local = await upscaleLocally(image.buffer, image.mime);
+    if (!local) {
+      sendJson(res, 503, {
+        error: ffmpegAvailable
+          ? "The image could not be upscaled. Check the server log for the ffmpeg error."
+          : "Free Upscale needs ffmpeg, which is not installed on this server.",
+      });
+      return;
+    }
+    console.log(`✓ free upscale via ${local.engine} in ${Date.now() - t0}ms (no model, no cost)`);
+    sendJson(res, 200, { image: local.dataUrl, engine: local.engine });
+  } catch (err) {
+    console.error("✗ free-upscale error:", err);
+    sendJson(res, 500, { error: err.message || "Free Upscale failed." });
+  }
 }
 
 async function handleUpscaleImage(req, res) {

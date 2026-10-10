@@ -574,13 +574,18 @@
           <div class="canvas-container">
             <canvas id="x-canvas" width="920" height="1700" aria-label="Post image for X"></canvas>
           </div>
+          <!-- Grouped and two-up: stacked one per row, these three buttons and the
+               hint made this card ~160px taller than the others, and the rail
+               is as tall as its tallest card — the empty gap under Poster/Text. -->
+          <div class="preview-card-actions x-card-actions">
           <button type="button" class="btn-ghost preview-card-dl" data-download="x">
             <svg width="13" height="13" aria-hidden="true"><use href="#i-download"/></svg> Download
           </button>
           <a class="btn-ghost preview-card-dl preview-card-x-link" href="https://x.com/intent/tweet" target="_blank" rel="noopener noreferrer" aria-label="Open X composer with post text, hashtags and follow line in a new tab" aria-describedby="x-share-hint" title="Open X with the post text, hashtags and follow line filled in; paste the copied image or attach the downloaded Pix">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg> Open X
           </a>
-          <button type="button" class="btn-ghost preview-card-dl" id="x-copy-image-btn" aria-describedby="x-share-hint">Copy Pix image</button>
+          <button type="button" class="btn-ghost preview-card-dl" id="x-copy-image-btn" aria-describedby="x-share-hint" title="Copy the Pix image to paste into X">Copy</button>
+          </div>
           <p class="preview-card-hint" id="x-share-hint">Text, hashtags and the follow line fill in on X. Copy and paste the image there, or attach the download.</p>
         </figure>
 
@@ -665,7 +670,21 @@
                below, deliberately. See "auto never expands" in server.mjs. -->
             <button type="button" id="ai-enhance-btn" class="btn-ai" disabled>
               <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
-              Restore &amp; Upscale
+              AI Upscale (paid)
+            </button>
+            <!-- Free Upscale: ffmpeg Lanczos + sharpen on our own server. No
+                 OpenAI call, no cost. -->
+            <button type="button" id="free-upscale-btn" class="btn-ai btn-free-upscale" disabled
+                    title="Enlarges and sharpens on our server. No AI, no cost.">
+              Free Upscale
+            </button>
+            <!-- Reframe is its own button, red because it is the expensive one
+                 (a full gpt-image redraw), and capped at 2 presses per pix —
+                 the server enforces the same cap. -->
+            <button type="button" id="ai-reframe-btn" class="btn-ai btn-danger-reframe" disabled
+                    title="Redraws the whole picture at the poster's shape. Paid, 2 per pix.">
+              <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
+              <span class="reframe-label">Reframe (2 left)</span>
             </button>
             <!-- The way back. AI Enhance overwrites the picture in place and
                  costs money to run, so a reviewer who does not like what came
@@ -688,9 +707,7 @@
                      what "upscale and reframe it to 9:16" gets from ChatGPT.
                      It is a regeneration. Expand is the job that pins the
                      photograph and composites a drawn margin around it. -->
-                <option value="reframe" selected>Reframe &amp; Upscale — redraw the whole scene at 9:16 (high quality)</option>
-                <option value="restore">Restore — redraw for detail at the same framing</option>
-                <option value="auto">Auto — same as Reframe &amp; Upscale</option>
+                <option value="restore" selected>Upscale — redraw for detail at the same framing</option>
                 <option value="expand">Expand — keep the photo pinned, draw the margin around it</option>
               </select>
             </label>
@@ -702,14 +719,16 @@
                 <option value="wide">Wide — roughly twice the scene</option>
               </select>
             </label>
-            <label class="slider-container" style="margin-top:10px;">
+            <!-- Hidden: the value was saved but never sent to OpenAI, so the
+                 slider did nothing. Kept in the DOM because app.js reads it. -->
+            <label class="slider-container" style="margin-top:10px;" hidden>
               <span class="slider-label">Strength</span>
               <input type="range" id="enhance-strength" min="0" max="100" step="5" value="20" />
             </label>
-            <small class="helper-text" id="enhance-strength-hint">20% — raise this only if the image still looks soft.</small>
+            <small class="helper-text" id="enhance-strength-hint" hidden>20% — raise this only if the image still looks soft.</small>
             <!-- Rewritten per job by syncEnhanceModeUI() in app.js; this is
                  the Auto text, which is what the selector defaults to. -->
-            <small class="helper-text" id="enhance-mode-hint">One gpt-image-1.5 call at high quality redraws the whole scene at the poster's shape — the same as asking ChatGPT to "upscale and reframe it to 9:16". It is a regeneration: recognisably the same, not pixel-identical. About $0.33 a picture, measured; the status line says what each press cost.</small>
+            <small class="helper-text" id="enhance-mode-hint">AI Upscale improves this photo with OpenAI. Paid, roughly $0.10 a click.</small>
             <p id="ai-enhance-status" class="status-text" role="status" aria-live="polite"></p>
           </div></div>
         </div>

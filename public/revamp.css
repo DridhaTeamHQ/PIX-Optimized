@@ -2513,3 +2513,91 @@ body.nav-collapsed .cms-sidebar .view-tab:hover::after {
   flex-wrap: wrap;
   max-width: 100%;
 }
+
+/* Reframe: the expensive job, marked as a danger action. */
+.btn-ai.btn-danger-reframe,
+:root[data-theme="dark"] .btn-ai.btn-danger-reframe {
+  background: #c62828;
+  color: #ffffff;
+  margin-top: 8px;
+}
+.btn-ai.btn-danger-reframe:hover:not(:disabled) {
+  background: #a31515;
+  color: #ffffff;
+}
+.btn-ai.btn-danger-reframe:disabled {
+  opacity: 0.55;
+}
+
+/* Free Upscale: costs nothing, so it gets a calm green. */
+.btn-ai.btn-free-upscale,
+:root[data-theme="dark"] .btn-ai.btn-free-upscale {
+  background: #2e7d32;
+  color: #ffffff;
+  margin-top: 8px;
+}
+.btn-ai.btn-free-upscale:hover:not(:disabled) {
+  background: #1b5e20;
+  color: #ffffff;
+}
+
+/* X card: buttons two-up and the hint kept for screen readers only, so the
+   card is no taller than Poster/Text and the rail leaves no gap under them. */
+.x-card-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.x-card-actions .preview-card-dl {
+  width: 100%;
+  padding: 7px 2px;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+#x-share-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Reviewers: AI Super Resolution is now the tall box (three buttons plus the
+   job controls). In a plain two-column grid every row is as tall as its
+   tallest cell, which left a big empty hole under Adjustments. So the AI box
+   takes the whole right column and the other three stack on the left.
+   Writers never see the AI box, so their layout is left as it was. */
+body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel {
+  align-items: start;
+  /* Row 5 is an empty flexible spacer: the tall AI box's extra height
+     lands there instead of being shared out under Adjustments. */
+  grid-template-rows: auto auto auto auto 1fr auto;
+}
+body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel>.acc:has(#img-zoom) {
+  grid-column: 1; grid-row: 2;
+}
+body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel>.acc:has(#bg-upload-zone) {
+  grid-column: 1; grid-row: 3;
+}
+body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel>.acc:has(#filter-presets) {
+  grid-column: 1; grid-row: 4;
+}
+body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel>.acc:has(#ai-enhance-btn) {
+  grid-column: 2; grid-row: 2 / span 4;
+}
+body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel>#stock-images-section {
+  grid-column: 1 / -1; grid-row: 6;
+}
+
+/* "Pull back" only belongs to Expand. The field carries [hidden], but a
+   display:flex rule on .field was overriding it, so it showed for Upscale. */
+#expand-amount-field[hidden] {
+  display: none !important;
+}
+
+/* [hidden] must win over the slider/helper display rules. */
+.slider-container[hidden],
+.helper-text[hidden] {
+  display: none !important;
+}
