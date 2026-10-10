@@ -1,56 +1,95 @@
-# Pix AI Upscaler (Railway)
+# PIX Free Upscaler (Railway)
 
-Self-hosted, pixel-faithful image enhancer: **CodeFormer** (face restoration)
-+ **Real-ESRGAN** (background upscale). CPU-only, no GPU. Runs on Railway; the
-Pix backend calls it first and falls back to gpt-image-1.5 if it's unavailable.
+The AI half of the **Free Upscale** button. It runs **Real-ESRGAN x2** on CPU
+in its own Railway service, so it costs no OpenAI credits, only the service's
+Railway compute.
 
-Unlike gpt-image, this **upscales the real photo** — it never regenerates or
-invents faces, so it's safe for news photos.
+Real-ESRGAN enlarges and cleans the pixels that are already in the photo
+(sharper edges, less blur, less JPEG blockiness). It has no face model, so it
+does not redraw people.
+
+## How PIX uses it
+
+When a reviewer clicks **Free Upscale**:
+
+| Photo (long edge) | What runs |
+|---|---|
+| Under 1024px | This service: Real-ESRGAN x2 (about 5 s to 2 min, depending on size and CPU) |
+| 1024px or larger, or this service is not set up / not responding | The main PIX server's ffmpeg resize + sharpen (about 1 s) |
+
+The 1024px switch is `FREE_AI_MAX_EDGE` on the main PIX service.
 
 ## Deploy on Railway
 
-1. Railway → **New Project → Deploy from GitHub repo** → pick `DridhaTeamHQ/pixAgent`.
-2. In the service settings set **Root Directory** to `upscaler` (so Railway builds this folder's Dockerfile, not the Node app).
-3. **Variables** (Service → Variables):
+1. In the Railway project, click **New Service → GitHub Repo** and pick
+   `DridhaTeamHQ/PIX-Optimized`.
+2. In the new service's **Settings**, set **Root Directory** to `upscaler`.
+   Railway then builds this folder's `Dockerfile`, not the Node app. The
+   first build takes about 3 to 5 minutes.
+3. In the new service's **Variables**, add:
+
    | Name | Value |
    |---|---|
-   | `UPSCALER_SECRET` | a long random string (must match Pix backend) |
-   | `CODEFORMER_FIDELITY` | `0.7` (optional; higher = more faithful, lower = prettier) |
-   | `UPSCALE` | `2` (optional) |
-4. Deploy. First build is slow (downloads PyTorch + model weights, ~5–8 min).
-5. **Networking → Generate Domain** → copy the public URL, e.g.
+   | `UPSCALER_SECRET` | a long random password you make up |
+
+4. In **Networking**, click **Generate Domain** and copy the URL, for example
    `https://pix-upscaler-production.up.railway.app`.
-6. Smoke test: `GET https://<domain>/health` → `{"ok": true, ...}`.
+5. Check it: open `https://<that-domain>/health`. It should show
+   `{"ok":true,"engine":"real-esrgan-x2",...}`.
 
-## Wire it into Pix
+## Connect it to PIX
 
-Add to the Pix env (local `.env` **and** Vercel → Settings → Environment Variables):
+In the **main PIX service's** Variables, add:
 
-```
-UPSCALER_URL=https://<your-railway-domain>
-UPSCALER_SECRET=<same long random string as above>
-```
+| Name | Value |
+|---|---|
+| `UPSCALER_URL` | the URL from step 4 |
+| `UPSCALER_SECRET` | the same password as in step 3 |
 
-That's it — AI Enhance now uses Railway. If `UPSCALER_URL` is unset, or the
-service errors/times out, Pix automatically falls back to gpt-image-1.5.
+The main service redeploys. After that, Free Upscale on a small photo shows
+"Free Upscale done (AI detail restore)" in the status line.
 
-## Notes
+## Optional settings (upscaler service)
 
-- **Speed**: CPU inference of a single-face 1536px photo is ~30–90 s depending
-  on Railway plan (more vCPU = faster). The Pix frontend already caps the sent
-  image at 1536px on the long edge.
-- **Vercel timeout**: the Pix `/api/upscale-image` proxy waits for Railway.
-  Vercel Hobby caps functions at 60 s; if a job runs longer it falls back to
-  gpt-image. Vercel Pro allows up to 300 s (the route requests `maxDuration:
-  300`). For consistently long jobs, upgrade the plan or lower `UPSCALE`.
-- **Cost**: flat Railway compute (fits a Hobby plan for low volume) instead of
-  ~$0.06–0.08 per gpt-image enhance.
+| Name | Default | What it does |
+|---|---|---|
+| `ENHANCE_STRENGTH` | `0.85` | How much of the AI result to keep (0 to 1). Lower looks more natural on skin, higher is sharper. |
+| `MAX_INPUT_EDGE` | `1024` | Larger inputs are shrunk to this first, to keep the time down. |
+| `TILE` | `256` | The photo is processed in tiles of this size. Smaller uses less memory, larger is a little faster. |
+| `TORCH_THREADS` | all cores | CPU threads to use. |
 
-## Local run
+## Speed
+
+Measured on a 16-core PC: a 300px photo took about 5 s and a 900px photo
+about 55 s. Railway machines usually have fewer cores, so expect it to be
+slower there. Giving the service more CPU in Railway makes it faster.
+
+## Run locally
+
+With Docker:
 
 ```bash
 cd upscaler
 docker build -t pix-upscaler .
-docker run -p 8000:8000 -e UPSCALER_SECRET=dev pix-upscaler
-# then: curl -X POST --data-binary @photo.jpg -H "X-Secret: dev" http://localhost:8000/enhance --output out.png
+docker run -p 8765:8000 -e UPSCALER_SECRET=localtest pix-upscaler
 ```
+
+Then, in the main project's `.env`:
+
+```
+UPSCALER_URL=http://127.0.0.1:8765
+UPSCALER_SECRET=localtest
+```
+
+Test it directly:
+
+```bash
+curl -X POST -H "X-Secret: localtest" -H "Content-Type: image/jpeg" --data-binary @photo.jpg http://127.0.0.1:8765/enhance --output out.png
+```
+
+## API
+
+- `GET /health` returns `{"ok": true, "engine": "real-esrgan-x2", "strength": 0.85}`
+- `POST /enhance`: send the raw image bytes in the body, get a PNG back.
+  - `X-Secret`: required when `UPSCALER_SECRET` is set
+  - `X-Enhance-Strength`: optional, 0 to 1, overrides `ENHANCE_STRENGTH`
