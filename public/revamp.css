@@ -1800,6 +1800,7 @@ body:not([data-role="qa"]):not([data-role="admin"]) .compose-fields {
 body.view-review .cms-topbar-actions,
 body.view-analytics .cms-topbar-actions,
 body.view-writers .cms-topbar-actions,
+body.view-imageai .cms-topbar-actions,
 body.view-article .cms-topbar-actions {
   display: none;
 }
@@ -2339,6 +2340,109 @@ body.nav-collapsed .cms-sidebar .view-tab:hover::after {
   }
 }
 
+/* The breakpoints again, AFTER the rail-width rules above.
+
+   The tablet and phone layouts are declared near the top of this file (the
+   68px icon rail at 1000px, the bottom bar at 720px), but `.cms-layout` and
+   `.cms-sidebar` are re-declared unconditionally further down — the track
+   list as var(--rail-w), the rail as sticky — and later beats earlier at the
+   same specificity. So neither breakpoint ever took effect: a phone kept the
+   full 232px desktop rail and squeezed every screen into the ~130px left
+   beside it, which is why Analytics and AI Usage scrolled sideways. */
+@media (max-width: 1000px) {
+  :root,
+  body.nav-collapsed {
+    --rail-w: 68px;
+  }
+}
+
+@media (max-width: 720px) {
+  .cms-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cms-sidebar {
+    position: fixed;
+  }
+
+  /* With the rail gone the header finally gets the screen's width, and its
+     right half — four post actions, the date, the account and Logout — is
+     still one unbroken row wider than a phone. Let it wrap under the title,
+     and drop the date, which the phone's own status bar already shows. */
+  .cms-topbar {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .cms-topbar-right {
+    width: 100%;
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+
+  .cms-topbar-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .cms-date {
+    display: none;
+  }
+}
+
+/* The phone filter bar is a two-column grid (styles.css), but `1fr` tracks
+   cannot shrink below their content, and every control in them has a desktop
+   minimum width — so the second column ran off the right edge. */
+@media (max-width: 620px) {
+  .analytics-filterbar-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analytics-filterbar .analytics-roster-filter,
+  .analytics-filterbar .analytics-select-trigger {
+    min-width: 0;
+  }
+
+  /* The dropdown's wrapper is a flex item too, and min-width:auto held it at
+     its label's full width — the chevron hung off the edge of its column. */
+  .analytics-filterbar .analytics-select,
+  .analytics-filterbar .imageai-select {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+  }
+
+  /* A closed list is only invisible, so it still counts toward the page's
+     width. Hung from the left of a right-hand column it reached past the
+     screen and the whole page scrolled sideways; hang that one from the right,
+     and never let any list be wider than the screen. */
+  .analytics-filterbar .analytics-select-menu {
+    max-width: calc(100vw - 32px);
+  }
+
+  .analytics-filterbar-controls > .analytics-roster-filter:nth-child(2) .analytics-select-menu {
+    left: auto;
+    right: 0;
+  }
+
+  /* Review's date pill is one unbroken row of two 160px date boxes, wider
+     than the toolbar it sits in. Same answer as the Analytics date range:
+     a grid whose boxes share what width there is. */
+  .review-dates,
+  .review-dates-range {
+    width: 100%;
+  }
+
+  .review-dates-range {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .review-dates input {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 /* A draft is not a verdict — it is work that has not been handed over — so it
    reads as neutral rather than as a state QA has acted on. */
 .status-pill.is-draft {
@@ -2600,4 +2704,369 @@ body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .
 .slider-container[hidden],
 .helper-text[hidden] {
   display: none !important;
+}
+
+/* ═══ AI Usage (admin) ═════════════════════════════════════════════════════
+   The analytics shell supplies the filter bar, stat cards and cards; this is
+   only what that screen has and Analytics does not — two tables and a log of
+   presses with their before/after pictures. Every colour is a theme token,
+   so both themes follow without a dark-mode block of their own. */
+
+.imageai-shell .analytics-grid {
+  margin-top: 14px;
+}
+
+/* .btn-ghost sets display:inline-flex, which beats the UA's [hidden] rule —
+   "Show all posts" would otherwise sit there with no post filter to clear. */
+.imageai-shell [hidden] {
+  display: none !important;
+}
+
+.imageai-select {
+  font: inherit;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-height: 34px;
+  /* The filter bar lets its items shrink, and a native select shrinks with
+     them until it reads "Every" — hold it at Analytics' dropdown width. */
+  min-width: 132px;
+  max-width: 180px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background-color: var(--surface-solid);
+  cursor: pointer;
+}
+
+.imageai-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Wide tables scroll inside their card rather than pushing the page sideways
+   on a phone. */
+.imageai-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.imageai-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+}
+
+.imageai-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--analytics-faint);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+.imageai-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--hairline-2);
+  vertical-align: middle;
+}
+
+.imageai-table tbody tr:hover {
+  background: var(--hover-tint);
+}
+
+.imageai-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.imageai-table td.is-zero {
+  color: var(--text-muted);
+}
+
+.imageai-table td.is-warn {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.imageai-link {
+  font: inherit;
+  font-weight: 700;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.imageai-who {
+  min-width: 150px;
+}
+
+.imageai-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.imageai-link:disabled {
+  color: var(--text-primary);
+  cursor: default;
+}
+
+.imageai-when {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.imageai-post {
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.imageai-post-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 700;
+}
+
+.imageai-post-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.imageai-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.imageai-mini {
+  padding: 5px 10px;
+  font-size: 0.78rem;
+}
+
+.imageai-mini + .imageai-mini {
+  margin-left: 6px;
+}
+
+/* ── The press log ── */
+
+.imageai-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.imageai-event {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--hairline);
+  border-left: 4px solid var(--green);
+  background: var(--hover-tint);
+}
+
+.imageai-event.is-failed,
+.imageai-event.is-refused,
+.imageai-event.is-limit {
+  border-left-color: var(--red);
+}
+
+.imageai-event.is-skipped {
+  border-left-color: var(--text-muted);
+}
+
+.imageai-event-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.imageai-event-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.imageai-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Paid buttons read as paid at a glance; the free ones do not. */
+.imageai-chip.action-reframe {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--red);
+}
+
+.imageai-chip.action-free_upscale {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.imageai-chip.action-undo {
+  background: var(--surface-input);
+  color: var(--text-secondary);
+}
+
+.imageai-outcome {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.imageai-outcome.is-failed,
+.imageai-outcome.is-refused,
+.imageai-outcome.is-limit {
+  color: var(--red);
+}
+
+.imageai-outcome.is-skipped {
+  color: var(--text-muted);
+}
+
+.imageai-event-who {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+}
+
+.imageai-event-who > strong,
+.imageai-event-who > span:first-of-type {
+  flex-shrink: 0;
+}
+
+.imageai-event-who > span:first-of-type {
+  color: var(--text-muted);
+}
+
+/* One line, cut short with an ellipsis, rather than wrapping under "on". */
+.imageai-event-post {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.imageai-event-facts {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.imageai-event-error {
+  font-size: 0.78rem;
+  color: var(--red);
+  overflow-wrap: anywhere;
+}
+
+/* A skip is the software declining to spend, not a fault: say why, quietly. */
+.imageai-event.is-skipped .imageai-event-error {
+  color: var(--text-secondary);
+}
+
+.imageai-shots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.imageai-arrow {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.imageai-shot {
+  position: relative;
+  display: block;
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  background: var(--surface-input);
+}
+
+.imageai-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.2s ease;
+}
+
+a.imageai-shot:hover img {
+  transform: scale(1.05);
+}
+
+.imageai-shot > span {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.imageai-shot.is-empty > span {
+  position: static;
+  display: grid;
+  place-items: center;
+  height: 100%;
+  border-radius: 0;
+  color: var(--text-muted);
+  background: none;
+}
+
+@media (max-width: 640px) {
+  .imageai-event {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .imageai-shots {
+    justify-content: flex-start;
+  }
+
+  .imageai-shot {
+    width: 120px;
+    height: 120px;
+  }
+
+  .imageai-event-who {
+    flex-wrap: wrap;
+  }
+
+  .imageai-event-post {
+    white-space: normal;
+  }
 }

@@ -29,8 +29,13 @@ import { createSpendGuard, priceTextUsage } from "./lib/spend-guard.js";
 import { handlePixAnalyticsRequest } from "./lib/pix-analytics.js";
 import {
   configureStorage, isStorageConfigured, uploadMedia, pingStorage,
-  createSignedUploadUrl, statMedia, deleteMedia,
+  createSignedUploadUrl, statMedia, deleteMedia, publicUrl,
 } from "./lib/storage.js";
+import {
+  IMAGE_ACTIONS, actionForJob, cleanClientReport, cleanDay, cleanPixId,
+  clearPreviewKeys, expiredPreviewRows, getImageActionReport, recordImageAction,
+} from "./lib/image-actions.js";
+import { imageSize } from "./lib/image-size.js";
 import { copyCardsToWeb } from "./lib/web-cards.js";
 import {
   fetchDailyMattrMeta, getDailyMattrConfig, publishDailyMattrBuzzContent,
@@ -543,6 +548,13 @@ const server = http.createServer(async (req, res) => {
   // Matched on the path alone — the analytics filters ride in the query string.
   if (req.method === "GET" && req.url?.split("?")[0] === "/api/pix-analytics") {
     await handlePixAnalytics(req, res);
+    return;
+  }
+
+  // GET is the admin's AI Usage report; POST is the editor reporting a press
+  // the server never saw. Same path, so the filters ride in the query string.
+  if (req.url?.split("?")[0] === "/api/image-actions") {
+    await handleImageActions(req, res);
     return;
   }
 
@@ -1518,6 +1530,10 @@ async function handleMediaCleanup(req, res) {
                 regexp_replace(split_part(o.name, '/', 2), '\.[a-z0-9]+$', '') as fid
            from storage.objects o
           where o.bucket_id = 'pix-media'
+            -- AI Usage previews belong to an audit row, not to a post, so no
+            -- post will ever reference them. They have their own retention
+            -- sweep (purgeAuditPreviews); this one would delete them all.
+            and o.name not like 'ai-audit/%'
        )
        select name, bytes from objs o
         where o.fid <> ''
@@ -2688,6 +2704,199 @@ async function handlePixAnalytics(req, res) {
   const result = await handlePixAnalyticsRequest({ user, query });
   sendJson(res, result.status, result.body);
 }
+
+/* ── Image AI audit ──
+   Every press of AI Upscale, Reframe, Free Upscale and Undo, for the admin's
+   AI Usage screen. See lib/image-actions.js for which presses the server
+   records and which the browser reports.
+
+   Recording never delays or breaks the press it describes: logImageAction()
+   is fire-and-forget, runs after the response is on its way, and a database
+   or storage failure costs the audit row and nothing else. */
+
+// Long edge of the before/after previews. Enough to judge a face or a crop
+// on the admin screen; small enough that a month of presses is a few hundred
+// MB of storage rather than gigabytes of full-size PNGs.
+const AUDIT_PREVIEW_EDGE = 640;
+// How long the preview FILES are kept. The rows (and so every count) stay.
+const AUDIT_PREVIEW_DAYS = Math.max(1, Number(env("IMAGE_AUDIT_PREVIEW_DAYS")) || 30);
+
+async function auditPreview(image) {
+  if (!image?.buffer?.length || !ffmpegAvailable || !isStorageConfigured()) return null;
+  const dir = join(tmpdir(), `pix-audit-${randomUUID()}`);
+  mkdirSync(dir, { recursive: true });
+  const inPath = join(dir, image.mime === "image/jpeg" ? "in.jpg" : "in.png");
+  const outPath = join(dir, "out.jpg");
+  try {
+    writeFileSync(inPath, image.buffer);
+    const E = AUDIT_PREVIEW_EDGE;
+    const enc = await run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-y", "-i", inPath,
+      "-vf", `scale='min(${E},iw)':'min(${E},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`,
+      "-frames:v", "1", "-q:v", "5", outPath,
+    ], 30_000);
+    if (enc.code !== 0 || !existsSync(outPath)) {
+      console.warn(`⚠ audit preview failed: ${enc.stderr.toString("utf-8").slice(-200)}`);
+      return null;
+    }
+    const key = `ai-audit/${randomUUID()}.jpg`;
+    await uploadMedia(key, readFileSync(outPath), "image/jpeg");
+    return key;
+  } catch (err) {
+    console.warn(`⚠ audit preview not stored: ${err.message}`);
+    return null;
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* temp dir */ }
+  }
+}
+
+/* `images.before` is what the button was pressed on, `images.after` what came
+   back; each is { buffer, mime }. Either may be absent — a failed press has no
+   after, and a press the browser reports has neither. */
+function logImageAction(req, entry, images = {}) {
+  if (!dbConfigured()) return;
+  (async () => {
+    const user = await currentUser(req);
+    const [beforeKey, resultKey] = await Promise.all([
+      auditPreview(images.before),
+      auditPreview(images.after),
+    ]);
+    const src = images.before?.buffer ? imageSize(images.before.buffer) : null;
+    const out = images.after?.buffer ? imageSize(images.after.buffer) : null;
+    // Identity from the session, last, so nothing in `entry` can name someone else.
+    await recordImageAction({
+      ...entry,
+      sourceW: src?.width ?? entry.sourceW,
+      sourceH: src?.height ?? entry.sourceH,
+      resultW: out?.width,
+      resultH: out?.height,
+      beforeKey,
+      resultKey,
+      userId: user?.id ?? null,
+      userName: user?.displayName || user?.username || null,
+    });
+  })().catch((err) => console.warn(`⚠ image action not recorded: ${err.message}`));
+}
+
+// The bytes behind an /api/enhance-result/<token> address, while they are held.
+function enhanceResultImage(address) {
+  const token = String(address || "").slice(ENHANCE_RESULT_PATH.length + 1);
+  const hit = enhanceResults.get(token);
+  return hit ? { buffer: hit.png, mime: "image/png" } : null;
+}
+
+function dataUrlImage(dataUrl) {
+  const m = /^data:(image\/[a-z+]+);base64,(.+)$/s.exec(String(dataUrl || ""));
+  return m ? { buffer: Buffer.from(m[2], "base64"), mime: m[1] } : null;
+}
+
+// Fields every image button sends: which post, which slide, and its headline.
+function auditFields(fields = {}) {
+  let headline = String(fields.headline || "");
+  try { headline = decodeURIComponent(headline); } catch { /* sent unencoded */ }
+  return {
+    pixId: cleanPixId(fields.pixId),
+    pageId: String(fields.pageId || "").slice(0, 100) || null,
+    headline: headline.slice(0, 200) || null,
+  };
+}
+
+/* A busy reviewer presses these buttons tens of times an hour, not hundreds.
+   The cap only exists so a stuck loop in a tab cannot fill the table. */
+const imageActionReportLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 600 });
+
+async function handleImageActions(req, res) {
+  // The /api/* gate has already required a session.
+  const user = await currentUser(req);
+  if (!dbConfigured()) {
+    sendJson(res, 503, { error: "No database configured, so image actions are not recorded." });
+    return;
+  }
+
+  if (req.method === "POST") {
+    const key = `u:${user.id}`;
+    if (!imageActionReportLimiter.check(key).allowed) {
+      sendJson(res, 429, { error: "Too many image actions reported this hour." });
+      return;
+    }
+    imageActionReportLimiter.record(key);
+    const body = await readJson(req, { limit: 8_000 }).catch(() => null);
+    const report = cleanClientReport(body || {});
+    if (!report) {
+      sendJson(res, 400, { error: "Unrecognised image action." });
+      return;
+    }
+    logImageAction(req, report);
+    sendJson(res, 202, { ok: true });
+    return;
+  }
+
+  if (req.method !== "GET") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+  // Reporting about colleagues — the admin's, like the Writers roster.
+  if (!isAdmin(user.role)) {
+    sendJson(res, 403, { error: "AI usage is visible to admins only." });
+    return;
+  }
+
+  const q = new URL(req.url, "http://localhost").searchParams;
+  let from = cleanDay(q.get("from"));
+  let to = cleanDay(q.get("to"));
+  if (from && to && from > to) [from, to] = [to, from];
+  const action = IMAGE_ACTIONS.includes(q.get("action")) ? q.get("action") : null;
+  const userId = String(q.get("user") || "").trim().slice(0, 100) || null;
+
+  try {
+    const report = await getImageActionReport({ from, to, userId, action, post: q.get("post") });
+    for (const e of report.events) {
+      e.before_url = e.before_key ? publicUrl(e.before_key) : null;
+      e.result_url = e.result_key ? publicUrl(e.result_key) : null;
+      delete e.before_key;
+      delete e.result_key;
+    }
+    sendJson(res, 200, {
+      filters: { from, to, user: userId, action, post: cleanPixId(q.get("post")) },
+      previewDays: AUDIT_PREVIEW_DAYS,
+      ...report,
+    });
+  } catch (err) {
+    console.warn("⚠ /api/image-actions failed:", err.message);
+    sendJson(res, 502, { error: err.message || "Could not load AI usage." });
+  }
+}
+
+/* Retention for the preview files only. A delete that fails for any reason
+   other than "already gone" leaves its key in place, so the next sweep tries
+   again rather than forgetting about a file that is still being paid for. */
+async function purgeAuditPreviews() {
+  if (!dbConfigured() || !isStorageConfigured()) return;
+  try {
+    const rows = await expiredPreviewRows(AUDIT_PREVIEW_DAYS);
+    const cleared = [];
+    for (const row of rows) {
+      let ok = true;
+      for (const key of [row.before_key, row.result_key].filter(Boolean)) {
+        try {
+          await deleteMedia(key);
+        } catch (err) {
+          if (!/not.?found|\(404\)/i.test(err.message)) {
+            ok = false;
+            console.warn(`⚠ audit preview ${key} not deleted: ${err.message}`);
+          }
+        }
+      }
+      if (ok) cleared.push(row.id);
+    }
+    const n = await clearPreviewKeys(cleared);
+    if (n) console.log(`✓ removed AI Usage previews older than ${AUDIT_PREVIEW_DAYS} days from ${n} press(es)`);
+  } catch (err) {
+    console.warn(`⚠ audit preview sweep failed: ${err.message}`);
+  }
+}
+setTimeout(purgeAuditPreviews, 2 * 60 * 1000).unref();
+setInterval(purgeAuditPreviews, 6 * 60 * 60 * 1000).unref();
 
 /* Where the resolved session is parked for the rest of the request. A Symbol
    so it cannot collide with anything Node puts on the request object, and so
@@ -6051,7 +6260,30 @@ async function handleEnhanceEditStage(req, res) {
   const blocked = enhanceBlocked();
   if (blocked) { sendJson(res, blocked.status, { error: blocked.error }); return; }
 
-  const { image, mask, fields } = await readEnhanceEdit(req);
+  const t0 = Date.now();
+  let read;
+  try {
+    read = await readEnhanceEdit(req);
+  } catch (err) {
+    /* The browser counts this press as the server's from the moment it sends
+       it, so an upload that cannot be read has to be recorded here or nowhere.
+       The header is the only place left to learn which button it was. */
+    const headerJob = String(req.headers["x-enhance-mode"] || "").toLowerCase();
+    logImageAction(req, {
+      action: actionForJob(headerJob),
+      job: ["expand", "reframe", "restore"].includes(headerJob) ? headerJob : null,
+      outcome: "failed",
+      error: err.message,
+    });
+    throw err;
+  }
+  const { image, mask, fields } = read;
+  const requestedJob = (() => {
+    const m = String(fields.mode || "restore").toLowerCase();
+    return ["expand", "reframe"].includes(m) ? m : "restore";
+  })();
+  // The press, as the AI Usage screen will show it. Recorded on every way out.
+  const audit = { action: actionForJob(requestedJob), job: requestedJob, ...auditFields(fields) };
 
   /* Reframe is the costly job: two per pix (page), per user. Checked before
      the spend gate so a refused press reserves nothing. */
@@ -6062,13 +6294,19 @@ async function handleEnhanceEditStage(req, res) {
     const who = user?.username ? `u:${user.username}` : `ip:${clientKey(req)}`;
     reframeKey = `${who}|${String(fields.pageId || "").slice(0, 100)}`;
     if ((reframeCounts.get(reframeKey) || 0) >= REFRAME_LIMIT_PER_PIX) {
-      sendJson(res, 429, { error: `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.` });
+      const error = `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.`;
+      sendJson(res, 429, { error });
+      logImageAction(req, { ...audit, outcome: "limit", error }, { before: image });
       return;
     }
   }
 
   const gateCharge = await enhanceSpendGate(req, res);
-  if (!gateCharge) return;
+  if (!gateCharge) {
+    // enhanceSpendGate has already answered with which limit it was.
+    logImageAction(req, { ...audit, outcome: "limit", error: "Hourly or spend limit reached." }, { before: image });
+    return;
+  }
   const onCharge = (usd) => {
     if (reframeKey) reframeCounts.set(reframeKey, (reframeCounts.get(reframeKey) || 0) + 1);
     return gateCharge(usd);
@@ -6077,27 +6315,46 @@ async function handleEnhanceEditStage(req, res) {
   const rawAmount = String(fields.amount || "moderate").toLowerCase();
   const rawSubject = String(fields.subject || "people").toLowerCase();
 
-  const payload = await runEnhanceEdit({
-    buffer: image.buffer,
-    mime: enhanceMime(image.mime),
-    mask,
-    composited: String(fields.composited || "") === "1",
-    mode: (() => {
-      const m = String(fields.mode || "restore").toLowerCase();
-      return ["expand", "reframe"].includes(m) ? m : "restore";
-    })(),
-    amount: ["slight", "moderate", "wide"].includes(rawAmount) ? rawAmount : "moderate",
-    subject: ["people", "scene", "graphic"].includes(rawSubject) ? rawSubject : "people",
-    description: String(fields.description || "").slice(0, 4000),
-    headline: decodeURIComponent(String(fields.headline || "")).slice(0, 200),
-    posterRatio: String(fields.posterRatio || ""),
-    size: ENHANCE_SIZES.has(rawSize) ? rawSize : "auto",
-    decidedBy: String(fields.decidedBy || "caller"),
-    reason: String(fields.reason || "").slice(0, 200),
-    onCharge,
-  });
+  let payload;
+  try {
+    payload = await runEnhanceEdit({
+      buffer: image.buffer,
+      mime: enhanceMime(image.mime),
+      mask,
+      composited: String(fields.composited || "") === "1",
+      mode: requestedJob,
+      amount: ["slight", "moderate", "wide"].includes(rawAmount) ? rawAmount : "moderate",
+      subject: ["people", "scene", "graphic"].includes(rawSubject) ? rawSubject : "people",
+      description: String(fields.description || "").slice(0, 4000),
+      headline: decodeURIComponent(String(fields.headline || "")).slice(0, 200),
+      posterRatio: String(fields.posterRatio || ""),
+      size: ENHANCE_SIZES.has(rawSize) ? rawSize : "auto",
+      decidedBy: String(fields.decidedBy || "caller"),
+      reason: String(fields.reason || "").slice(0, 200),
+      onCharge,
+    });
+  } catch (err) {
+    logImageAction(req, {
+      ...audit,
+      outcome: err.moderated ? "refused" : "failed",
+      error: err.message,
+      durationMs: Date.now() - t0,
+    }, { before: image });
+    throw err;
+  }
 
   sendJson(res, 200, payload);
+  logImageAction(req, {
+    ...audit,
+    // An expand without a composited frame runs as a restore; say what ran.
+    job: payload.mode || requestedJob,
+    outcome: "success",
+    engine: payload.engine,
+    // A cache hit was paid for by an earlier press, not this one.
+    costUsd: payload.cached ? 0 : (payload.cost?.usd ?? null),
+    cached: Boolean(payload.cached),
+    durationMs: Date.now() - t0,
+  }, { before: image, after: enhanceResultImage(payload.image) });
 }
 
 /* The legacy single-shot: plan and edit in one call, raw image body, no way
@@ -6108,10 +6365,30 @@ async function handleEnhanceSingleShot(req, res) {
   const blocked = enhanceBlocked();
   if (blocked) { sendJson(res, blocked.status, { error: blocked.error }); return; }
 
-  const onCharge = await enhanceSpendGate(req, res);
-  if (!onCharge) return;
+  const t0 = Date.now();
+  /* Recorded like the two-stage path, so nothing that reaches a paid call is
+     missing from AI Usage. This caller sends no post id; the headline is all
+     there is to say which post it was. */
+  const headerMode = (req.headers["x-enhance-mode"] || "restore").toString().toLowerCase();
+  const audit = {
+    action: actionForJob(headerMode === "auto" ? "reframe" : headerMode),
+    job: null,
+    ...auditFields({ headline: req.headers["x-headline"] }),
+  };
 
-  const buffer = await readEnhanceBody(req);
+  const onCharge = await enhanceSpendGate(req, res);
+  if (!onCharge) {
+    logImageAction(req, { ...audit, outcome: "limit", error: "Hourly or spend limit reached." });
+    return;
+  }
+
+  let buffer;
+  try {
+    buffer = await readEnhanceBody(req);
+  } catch (err) {
+    logImageAction(req, { ...audit, outcome: "failed", error: err.message });
+    throw err;
+  }
   const mime = enhanceMime(req.headers["content-type"]);
   const headline = decodeURIComponent(req.headers["x-headline"] || "").trim().slice(0, 200);
   const posterRatio = (req.headers["x-poster-ratio"] || "").toString();
@@ -6128,25 +6405,44 @@ async function handleEnhanceSingleShot(req, res) {
     amount: "moderate", subject: "people", description: "", reason: "", decidedBy: "caller",
   };
   const mode = plan.mode;
+  audit.job = mode;
+  const image = { buffer, mime };
 
-  const payload = await runEnhanceEdit({
-    buffer,
-    mime,
-    mask: null,
-    composited: false,
-    mode,
-    amount: requestedMode === "auto" ? plan.amount : "moderate",
-    subject: plan.subject,
-    description: plan.description,
-    headline,
-    posterRatio,
-    size: sizeForRatio(posterRatio, sizeHint, sourceW, sourceH),
-    decidedBy: requestedMode === "auto" ? plan.decidedBy : "caller",
-    reason: requestedMode === "auto" ? plan.reason : "",
-    onCharge,
-  });
+  let payload;
+  try {
+    payload = await runEnhanceEdit({
+      buffer,
+      mime,
+      mask: null,
+      composited: false,
+      mode,
+      amount: requestedMode === "auto" ? plan.amount : "moderate",
+      subject: plan.subject,
+      description: plan.description,
+      headline,
+      posterRatio,
+      size: sizeForRatio(posterRatio, sizeHint, sourceW, sourceH),
+      decidedBy: requestedMode === "auto" ? plan.decidedBy : "caller",
+      reason: requestedMode === "auto" ? plan.reason : "",
+      onCharge,
+    });
+  } catch (err) {
+    logImageAction(req, {
+      ...audit, outcome: err.moderated ? "refused" : "failed", error: err.message, durationMs: Date.now() - t0,
+    }, { before: image });
+    throw err;
+  }
 
   sendJson(res, 200, payload);
+  logImageAction(req, {
+    ...audit,
+    job: payload.mode || mode,
+    outcome: "success",
+    engine: payload.engine,
+    costUsd: payload.cached ? 0 : (payload.cost?.usd ?? null),
+    cached: Boolean(payload.cached),
+    durationMs: Date.now() - t0,
+  }, { before: image, after: enhanceResultImage(payload.image) });
 }
 
 /* ── Free Upscale ───────────────────────────────────────────────
@@ -6302,33 +6598,48 @@ async function tryAiUpscaler(buffer, mime) {
 }
 
 async function handleFreeUpscale(req, res) {
+  const t0 = Date.now();
+  // Filled in as the request is read, so a failure at any point is still recorded.
+  let audit = { action: "free_upscale", job: null };
+  let image = null;
   try {
-    const { image, fields } = await readEnhanceEdit(req);
+    const read = await readEnhanceEdit(req);
+    image = read.image;
+    const fields = read.fields;
+    audit = { ...audit, ...auditFields(fields), sourceW: fields?.width, sourceH: fields?.height };
     if (!image?.buffer?.length) { sendJson(res, 400, { error: "An image is required." }); return; }
-    const t0 = Date.now();
     const longEdge = Math.max(Number(fields?.width) || 0, Number(fields?.height) || 0);
     if (longEdge && longEdge < FREE_AI_MAX_EDGE) {
       const ai = await tryAiUpscaler(image.buffer, image.mime);
       if (ai) {
         console.log(`✓ free upscale via ${ai.engine} in ${Date.now() - t0}ms (self-hosted, no OpenAI)`);
         sendJson(res, 200, { image: ai.dataUrl, engine: ai.engine, ai: true });
+        logImageAction(req, {
+          ...audit, outcome: "success", engine: ai.engine, costUsd: 0, durationMs: Date.now() - t0,
+        }, { before: image, after: dataUrlImage(ai.dataUrl) });
         return;
       }
     }
     const local = await upscaleLocally(image.buffer, image.mime);
     if (!local) {
-      sendJson(res, 503, {
-        error: ffmpegAvailable
-          ? "The image could not be upscaled. Check the server log for the ffmpeg error."
-          : "Free Upscale needs ffmpeg, which is not installed on this server.",
-      });
+      const error = ffmpegAvailable
+        ? "The image could not be upscaled. Check the server log for the ffmpeg error."
+        : "Free Upscale needs ffmpeg, which is not installed on this server.";
+      sendJson(res, 503, { error });
+      logImageAction(req, { ...audit, outcome: "failed", error, durationMs: Date.now() - t0 }, { before: image });
       return;
     }
     console.log(`✓ free upscale via ${local.engine} in ${Date.now() - t0}ms (no model, no cost)`);
     sendJson(res, 200, { image: local.dataUrl, engine: local.engine });
+    logImageAction(req, {
+      ...audit, outcome: "success", engine: local.engine, costUsd: 0, durationMs: Date.now() - t0,
+    }, { before: image, after: dataUrlImage(local.dataUrl) });
   } catch (err) {
     console.error("✗ free-upscale error:", err);
     sendJson(res, 500, { error: err.message || "Free Upscale failed." });
+    logImageAction(req, {
+      ...audit, outcome: "failed", error: err.message || "Free Upscale failed.", durationMs: Date.now() - t0,
+    }, { before: image });
   }
 }
 

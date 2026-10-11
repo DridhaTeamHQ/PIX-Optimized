@@ -1242,6 +1242,8 @@ function revertImageToOriginal() {
      its own now that the page is showing it. */
   renderPoster();
   setEnhanceStatus("↩ Back to the image as the writer posted it.", "success");
+  // Local, so the server never sees it; AI Usage counts it from here.
+  reportImageAction("undo", "success", { page, pixId: state.pixId });
 }
 
 /* Enable the button only when there is something behind it. Called from the
@@ -2754,6 +2756,11 @@ if (bgUploadZone) {
 }
 
 document.addEventListener("paste", (event) => {
+  /* A paste inside the upload zone has already been handled by the zone's own
+     listener, which bubbles to here first. Handling it again loaded the image
+     twice — the selection nonce kept the second analysis call from going out,
+     but the picture was still decoded and drawn twice. */
+  if (event.defaultPrevented) return;
   const target = event.target;
   if (isEditableElement(target)) return;
   const zoneFocused =
@@ -8800,6 +8807,7 @@ const CMS_VIEW_TITLES = {
   review:    { title: "Review", crumb: "Review" },
   analytics: { title: "Analytics", crumb: "Analytics" },
   writers:   { title: "Content Writers", crumb: "Writers" },
+  imageai:   { title: "AI Image Usage", crumb: "AI Usage" },
 };
 
 function syncCmsHeader(view) {
@@ -8986,24 +8994,386 @@ if (cmsToday) {
   });
 }
 
+/* ═══════════════════════ AI Usage (admin) ═══════════════════════
+   Who pressed the image-AI buttons, on which post, what each press cost and
+   what came back. Read from /api/image-actions, which answers admins only.
+
+   Names, headlines, engine names and error text all arrive from elsewhere —
+   operators, writers, OpenAI — so every one goes through escapeHtml() before
+   it reaches innerHTML. Declared above setView(), which reads imageAiView. */
+
+const imageAiView = document.getElementById("imageai-view");
+const IMAGE_ACTION_LABELS = {
+  ai_upscale: "AI Upscale",
+  reframe: "Reframe",
+  free_upscale: "Free Upscale",
+  undo: "Undo",
+};
+// The Job selector's names, shown beside AI Upscale so restore and expand
+// presses of the same button can be told apart.
+const IMAGE_JOB_LABELS = { restore: "Upscale", expand: "Expand" };
+const IMAGE_OUTCOME_LABELS = {
+  success: "Done",
+  failed: "Failed",
+  refused: "Refused by OpenAI",
+  limit: "Limit reached",
+  skipped: "Skipped, no charge",
+};
+
+const imageAiFilters = { from: null, to: null, user: "", action: "", post: null, postLabel: "" };
+let imageAiPeopleLoaded = false;
+
+// Today on the India calendar, in the YYYY-MM-DD a date input wants.
+function istDayKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(date);
+}
+
+const imageAiTimeFormat = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
+});
+
+function imageAiTime(value) {
+  const d = value ? new Date(value) : null;
+  return d && !Number.isNaN(d.getTime()) ? imageAiTimeFormat.format(d) : "";
+}
+
+function formatUsd(value, digits = 2) {
+  return `$${(Number(value) || 0).toFixed(digits)}`;
+}
+
+function setImageAiStatus(message, kind) {
+  const el = document.getElementById("imageai-status");
+  if (!el) return;
+  el.className = "status-text" + (kind ? ` ${kind}` : "");
+  el.textContent = message || "";
+}
+
+function syncImageAiInputs() {
+  const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ""; };
+  set("imageai-from", imageAiFilters.from);
+  set("imageai-to", imageAiFilters.to);
+  set("imageai-user", imageAiFilters.user);
+  set("imageai-action", imageAiFilters.action);
+}
+
+function readImageAiInputs() {
+  const get = (id) => document.getElementById(id)?.value || "";
+  imageAiFilters.from = get("imageai-from") || null;
+  imageAiFilters.to = get("imageai-to") || null;
+  imageAiFilters.user = get("imageai-user");
+  imageAiFilters.action = get("imageai-action");
+}
+
+/* The Person filter lists every account, including anyone who has not pressed
+   anything yet in this range. Loaded once; a failure leaves "Everyone", which
+   is still a working report. */
+async function loadImageAiPeople() {
+  if (imageAiPeopleLoaded) return;
+  const select = document.getElementById("imageai-user");
+  if (!select) return;
+  try {
+    const { users } = await usersRequest("/api/users");
+    for (const u of users || []) {
+      const opt = document.createElement("option");
+      opt.value = u.id;
+      opt.textContent = u.displayName || u.username;
+      select.appendChild(opt);
+    }
+    imageAiPeopleLoaded = true;
+    syncImageAiInputs();
+  } catch { /* the report does not depend on it */ }
+}
+
+async function loadImageAi() {
+  if (!imageAiView || !isAdminRole(state.user?.role)) return;
+  // Opens on today: "how many presses so far today" is the question it is for.
+  if (!imageAiFilters.from && !imageAiFilters.to) {
+    imageAiFilters.from = imageAiFilters.to = istDayKey();
+  }
+  syncImageAiInputs();
+  loadImageAiPeople();
+
+  const query = new URLSearchParams();
+  if (imageAiFilters.from) query.set("from", imageAiFilters.from);
+  if (imageAiFilters.to) query.set("to", imageAiFilters.to);
+  if (imageAiFilters.user) query.set("user", imageAiFilters.user);
+  if (imageAiFilters.action) query.set("action", imageAiFilters.action);
+  if (imageAiFilters.post) query.set("post", imageAiFilters.post);
+
+  const refreshBtn = document.getElementById("imageai-refresh");
+  if (refreshBtn) refreshBtn.disabled = true;
+  imageAiView.setAttribute("aria-busy", "true");
+  setImageAiStatus("Loading AI usage…");
+  try {
+    const res = await fetch(`/api/image-actions?${query}`, { credentials: "same-origin" });
+    const payload = await res.json().catch(() => ({}));
+    if (res.status === 401) return handleSignedOut();
+    if (!res.ok) throw new Error(payload.error || `Could not load AI usage (${res.status}).`);
+    renderImageAi(payload);
+    setImageAiStatus("");
+    const updated = document.getElementById("imageai-updated");
+    if (updated) {
+      updated.textContent = `Updated ${new Date().toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit",
+      })} IST`;
+    }
+  } catch (err) {
+    setImageAiStatus(err.message, "error");
+  } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
+    imageAiView.removeAttribute("aria-busy");
+  }
+}
+
+function renderImageAi(payload) {
+  const t = payload.totals || {};
+  for (const key of ["ai_upscale", "reframe", "free_upscale", "undo"]) {
+    const el = imageAiView.querySelector(`[data-imageai-value="${key}"]`);
+    if (el) el.textContent = formatCount(t[key] || 0);
+  }
+  const costEl = imageAiView.querySelector('[data-imageai-value="cost"]');
+  if (costEl) costEl.textContent = formatUsd(t.cost_usd);
+  const costSub = document.getElementById("imageai-cost-sub");
+  if (costSub) {
+    costSub.textContent = [
+      `${formatCount(t.failed || 0)} didn't complete`,
+      t.cached ? `${formatCount(t.cached)} from cache, free` : "",
+    ].filter(Boolean).join(" · ");
+  }
+
+  const summary = document.getElementById("imageai-filter-summary");
+  if (summary) {
+    const { from, to, user, action } = imageAiFilters;
+    const today = istDayKey();
+    const range = !from && !to ? "All dates"
+      : from === to ? (from === today ? "Today" : from)
+      : `${from || "start"} → ${to || "today"}`;
+    const person = user
+      ? (document.querySelector(`#imageai-user option[value="${CSS.escape(user)}"]`)?.textContent || "One person")
+      : "Everyone";
+    summary.textContent = `${range} · ${person} · ${action ? IMAGE_ACTION_LABELS[action] : "All buttons"}`;
+  }
+
+  renderImageAiPeople(payload.people || []);
+  renderImageAiPosts(payload.posts || []);
+  renderImageAiEvents(payload.events || [], payload.previewDays);
+}
+
+function imageAiCountCells(row) {
+  return ["ai_upscale", "reframe", "free_upscale", "undo"]
+    .map((k) => `<td class="num${row[k] ? "" : " is-zero"}">${formatCount(row[k] || 0)}</td>`)
+    .join("");
+}
+
+const IMAGE_AI_COUNT_HEADS =
+  "<th class=\"num\">AI Upscale</th><th class=\"num\">Reframe</th>" +
+  "<th class=\"num\">Free Upscale</th><th class=\"num\">Undo</th>";
+
+function renderImageAiPeople(rows) {
+  const box = document.getElementById("imageai-people");
+  if (!box) return;
+  if (!rows.length) {
+    box.innerHTML = '<p class="analytics-empty">No presses in this range.</p>';
+    return;
+  }
+  box.innerHTML = `
+    <table class="imageai-table">
+      <thead><tr>
+        <th>Person</th>${IMAGE_AI_COUNT_HEADS}
+        <th class="num">Didn't complete</th><th class="num">OpenAI cost</th><th>Last press</th>
+      </tr></thead>
+      <tbody>${rows.map((r) => `
+        <tr>
+          <td><button type="button" class="imageai-link" data-imageai-user="${escapeHtml(r.user_id || "")}"
+                      ${r.user_id ? "" : "disabled"}>${escapeHtml(r.user_name)}</button></td>
+          ${imageAiCountCells(r)}
+          <td class="num${r.failed ? " is-warn" : " is-zero"}">${formatCount(r.failed || 0)}</td>
+          <td class="num">${formatUsd(r.cost_usd)}</td>
+          <td class="imageai-when">${escapeHtml(imageAiTime(r.last_at))}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>`;
+}
+
+/* Where the post stands now, which is what tells an admin whether the money
+   went on something that shipped. */
+function imageAiPostStatus(row) {
+  if (!row.pix_id) return { label: "Not saved", cls: "is-draft" };
+  if (!row.post_exists) return { label: "Deleted", cls: "is-rejected" };
+  if (row.published_at) return { label: "Published", cls: "is-published" };
+  if (row.approved) return { label: "Approved", cls: "is-approved" };
+  if (row.rejected) return { label: "Rejected", cls: "is-rejected" };
+  return { label: "Pending", cls: "" };
+}
+
+function renderImageAiPosts(rows) {
+  const box = document.getElementById("imageai-posts");
+  if (!box) return;
+  if (!rows.length) {
+    box.innerHTML = '<p class="analytics-empty">No presses in this range.</p>';
+    return;
+  }
+  box.innerHTML = `
+    <table class="imageai-table">
+      <thead><tr>
+        <th>Post</th><th>Pressed by</th>${IMAGE_AI_COUNT_HEADS}
+        <th class="num">OpenAI cost</th><th></th>
+      </tr></thead>
+      <tbody>${rows.map((r) => {
+        const status = imageAiPostStatus(r);
+        const headline = r.headline || "(no headline)";
+        return `
+        <tr>
+          <td class="imageai-post">
+            <span class="imageai-post-title" title="${escapeHtml(headline)}">${escapeHtml(headline)}</span>
+            <span class="imageai-post-meta">
+              <span class="status-pill ${status.cls}">${status.label}</span>
+              ${r.writer_name ? `written by ${escapeHtml(r.writer_name)}` : ""}
+            </span>
+          </td>
+          <td class="imageai-who">${escapeHtml(r.people || "")}</td>
+          ${imageAiCountCells(r)}
+          <td class="num">${formatUsd(r.cost_usd)}</td>
+          <td class="imageai-actions">
+            ${r.pix_id ? `<button type="button" class="btn-ghost imageai-mini" data-imageai-post="${escapeHtml(r.pix_id)}"
+                                  data-imageai-post-label="${escapeHtml(headline)}">Presses</button>` : ""}
+            ${r.post_exists ? `<button type="button" class="btn-ghost imageai-mini" data-imageai-open="${escapeHtml(r.pix_id)}">Open</button>` : ""}
+          </td>
+        </tr>`;
+      }).join("")}
+      </tbody>
+    </table>`;
+}
+
+function imageAiShot(url, label) {
+  return url
+    ? `<a class="imageai-shot" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+         <img src="${escapeHtml(url)}" alt="${label} picture" loading="lazy" />
+         <span>${label}</span>
+       </a>`
+    : `<span class="imageai-shot is-empty"><span>${label}</span></span>`;
+}
+
+function renderImageAiEvents(rows, previewDays) {
+  const list = document.getElementById("imageai-events");
+  if (!list) return;
+
+  const title = document.getElementById("imageai-events-title");
+  const desc = document.getElementById("imageai-events-desc");
+  const clear = document.getElementById("imageai-post-clear");
+  if (title) title.textContent = imageAiFilters.post ? `Presses on “${imageAiFilters.postLabel}”` : "Every press";
+  if (clear) clear.hidden = !imageAiFilters.post;
+  if (desc) {
+    desc.textContent = `Newest first, up to 200. Click a picture to open it full size — ` +
+      `pictures are kept for ${previewDays || 30} days, the counts for good.`;
+  }
+
+  if (!rows.length) {
+    list.innerHTML = '<li class="analytics-empty">No presses in this range.</li>';
+    return;
+  }
+
+  list.innerHTML = rows.map((e) => {
+    const job = e.action === "ai_upscale" && IMAGE_JOB_LABELS[e.job] ? ` · ${IMAGE_JOB_LABELS[e.job]}` : "";
+    const size = e.source_w && e.source_h
+      ? `${e.source_w}×${e.source_h}${e.result_w && e.result_h ? ` → ${e.result_w}×${e.result_h}` : ""}`
+      : "";
+    const cost = e.action === "reframe" || e.action === "ai_upscale"
+      ? (e.cached ? "from cache, free" : e.cost_usd != null ? formatUsd(e.cost_usd, 3) : "")
+      : "";
+    const facts = [
+      e.engine ? escapeHtml(e.engine) : "",
+      cost,
+      size,
+      e.duration_ms ? `${Math.max(1, Math.round(e.duration_ms / 1000))}s` : "",
+    ].filter(Boolean).join(" · ");
+    const shots = e.action === "undo" ? ""
+      : (e.before_url || e.result_url)
+        ? `<div class="imageai-shots">${imageAiShot(e.before_url, "Before")}<span class="imageai-arrow" aria-hidden="true">→</span>${imageAiShot(e.result_url, "After")}</div>`
+        : "";
+    return `
+      <li class="imageai-event is-${escapeHtml(e.outcome)}">
+        <div class="imageai-event-main">
+          <div class="imageai-event-top">
+            <span class="imageai-chip action-${escapeHtml(e.action)}">${escapeHtml(IMAGE_ACTION_LABELS[e.action] || e.action)}${job}</span>
+            <span class="imageai-outcome is-${escapeHtml(e.outcome)}">${escapeHtml(IMAGE_OUTCOME_LABELS[e.outcome] || e.outcome)}</span>
+            <span class="imageai-when">${escapeHtml(imageAiTime(e.created_at))}</span>
+          </div>
+          <div class="imageai-event-who">
+            <strong>${escapeHtml(e.user_name || "Unknown")}</strong>
+            <span>on</span>
+            <span class="imageai-event-post">${escapeHtml(e.headline || (e.pix_id ? "(no headline)" : "an unsaved post"))}</span>
+          </div>
+          ${facts ? `<div class="imageai-event-facts">${facts}</div>` : ""}
+          ${e.error ? `<div class="imageai-event-error">${escapeHtml(e.error)}</div>` : ""}
+        </div>
+        ${shots}
+      </li>`;
+  }).join("");
+}
+
+if (imageAiView) {
+  document.getElementById("imageai-apply")?.addEventListener("click", () => {
+    readImageAiInputs();
+    loadImageAi();
+  });
+  document.getElementById("imageai-reset")?.addEventListener("click", () => {
+    const today = istDayKey();
+    Object.assign(imageAiFilters, { from: today, to: today, user: "", action: "", post: null, postLabel: "" });
+    loadImageAi();
+  });
+  document.getElementById("imageai-refresh")?.addEventListener("click", () => loadImageAi());
+  document.getElementById("imageai-post-clear")?.addEventListener("click", () => {
+    imageAiFilters.post = null;
+    imageAiFilters.postLabel = "";
+    loadImageAi();
+  });
+  imageAiView.addEventListener("click", (e) => {
+    const person = e.target.closest("[data-imageai-user]");
+    if (person && person.dataset.imageaiUser) {
+      readImageAiInputs();
+      imageAiFilters.user = person.dataset.imageaiUser;
+      loadImageAi();
+      return;
+    }
+    const post = e.target.closest("[data-imageai-post]");
+    if (post) {
+      readImageAiInputs();
+      imageAiFilters.post = post.dataset.imageaiPost;
+      imageAiFilters.postLabel = post.dataset.imageaiPostLabel || "this post";
+      loadImageAi().then(() => document.getElementById("imageai-events")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      return;
+    }
+    const open = e.target.closest("[data-imageai-open]");
+    if (open) {
+      setView("poster");
+      openSavedPost(open.dataset.imageaiOpen);
+    }
+  });
+}
+
 function setView(view) {
   // Signed out, there is nothing to list.
-  if ((view === "review" || view === "analytics" || view === "writers") && !state.user) view = "poster";
+  if ((view === "review" || view === "analytics" || view === "writers" || view === "imageai") && !state.user) view = "poster";
   // Analytics and Writers are QA-only; a writer landing here (stale tab, deep
   // link) goes home. The server refuses them too — this is only the redirect.
   if (view === "analytics" && !canReviewRole(state.user?.role)) view = "poster";
   // The roster is the admin's screen; QA landing here (stale tab, deep link)
   // goes home. The server refuses it too.
   if (view === "writers" && !isAdminRole(state.user?.role)) view = "poster";
+  // AI Usage is the admin's too, for the same reason. The server refuses it as well.
+  if (view === "imageai" && !isAdminRole(state.user?.role)) view = "poster";
 
   document.body.classList.toggle("view-article", view === "article");
   document.body.classList.toggle("view-review", view === "review");
   document.body.classList.toggle("view-analytics", view === "analytics");
   document.body.classList.toggle("view-writers", view === "writers");
+  document.body.classList.toggle("view-imageai", view === "imageai");
   if (articleView) articleView.hidden = view !== "article";
   if (reviewView) reviewView.hidden = view !== "review";
   if (analyticsView) analyticsView.hidden = view !== "analytics";
   if (writersView) writersView.hidden = view !== "writers";
+  if (imageAiView) imageAiView.hidden = view !== "imageai";
   if (viewTabs) {
     viewTabs.querySelectorAll(".view-tab").forEach(t => {
       const active = t.dataset.view === view;
@@ -9017,6 +9387,7 @@ function setView(view) {
   if (view === "review") loadReviewQueue();
   if (view === "analytics") loadAnalytics({ force: true });
   if (view === "writers") loadWriters();
+  if (view === "imageai") loadImageAi();
 }
 
 if (viewTabs) {
@@ -9240,6 +9611,35 @@ function setEnhanceStatus(msg, kind) {
   if (!aiEnhanceStatus) return;
   aiEnhanceStatus.className = "status-text" + (kind ? ` ${kind}` : "");
   aiEnhanceStatus.textContent = msg || "";
+}
+
+/* The admin's AI Usage screen counts every press of the image buttons. The
+   server records each press that reaches it — with the cost and the picture
+   that came back — so this only reports what it never sees: Undo, which is
+   local, and a paid press that stopped before the paid call. Reporting both
+   would count one press twice.
+
+   Fire-and-forget, and keepalive so a press made just before the tab closes
+   still arrives. Nothing here may get in the way of the editor. */
+function reportImageAction(action, outcome, { job = null, error = null, page = null, pixId = null } = {}) {
+  if (!state.user) return;
+  try {
+    fetch("/api/image-actions", {
+      method: "POST",
+      credentials: "same-origin",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        outcome,
+        job,
+        error: error ? String(error).slice(0, 300) : null,
+        pixId: pixId || null,
+        pageId: page?.id || null,
+        headline: (state.headline || "").slice(0, 200),
+      }),
+    }).catch(() => {});
+  } catch { /* reporting is never worth an editor error */ }
 }
 
 const enhanceModeSel    = document.getElementById("enhance-mode");
@@ -10036,8 +10436,19 @@ async function runImageAI(modeOverride) {
   if (!img || !btn) return;
   // Whose picture this is. Read before the first await — see the commit below.
   const enhanceOwner = activePage();
+  /* For the AI Usage audit: the post this press was made on, read now — the
+     call takes 30-90 seconds and the reviewer may have opened another post by
+     the time it ends. `sentPaidCall` marks the point after which the server
+     records the press itself; see reportImageAction(). */
+  const pixIdAtPress = state.pixId || "";
+  const auditAction = requestedMode === "reframe" ? "reframe" : "ai_upscale";
+  const reportPress = (outcome, error) => reportImageAction(auditAction, outcome, {
+    job: requestedMode, error, page: enhanceOwner, pixId: pixIdAtPress,
+  });
+  let sentPaidCall = false;
   if (requestedMode === "reframe" && reframesLeft(enhanceOwner) <= 0) {
     setEnhanceStatus(`Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.`);
+    reportPress("limit", `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.`);
     return;
   }
   /* Before anything is spent. Taken here rather than beside the commit so the
@@ -10321,6 +10732,7 @@ async function runImageAI(modeOverride) {
           "success",
         );
         if (toneHelps) renderPoster();
+        reportPress("skipped", `Already ${state.aspectRatio || "9:16"} at ${rawW}×${rawH} — a redraw could only shrink it.`);
         btn.disabled = false;
         btn.classList.remove("working");
         return;
@@ -10374,15 +10786,28 @@ async function runImageAI(modeOverride) {
     form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
     form.append("posterRatio", state.aspectRatio || "");
     form.append("pageId", enhanceOwner?.id || "");
+    form.append("pixId", pixIdAtPress);
     form.append("size", plan.size || "auto");
     form.append("decidedBy", plan.decidedBy || "caller");
     form.append("reason", plan.reason || "");
 
+    /* From here the server records this press, however it ends — set before
+       the request rather than after it, because a proxy that drops the socket
+       on a long call leaves the browser with an error for a press the server
+       completed and billed. Counting that one twice would be worse than
+       missing a press that never left the building. */
+    sentPaidCall = true;
     // No Content-Type here on purpose: the browser has to set the multipart
     // boundary itself, and naming the type strips it.
     const resp = await fetch("/api/upscale-image", {
       method: "POST",
-      headers: { "X-Enhance-Stage": "edit" },
+      headers: {
+        "X-Enhance-Stage": "edit",
+        // The same job as the form's `mode`, readable before the body is. If
+        // the upload cannot be read, this is all the AI Usage audit has to
+        // say which button was pressed.
+        "X-Enhance-Mode": place ? "expand" : (plan.mode === "reframe" ? "reframe" : "restore"),
+      },
       body: form,
     });
     const data = await resp.json().catch(() => ({}));
@@ -10555,6 +10980,9 @@ async function runImageAI(modeOverride) {
       "success",
     );
   } catch (err) {
+    // Stopped before the paid call (the planning step failed): the server
+    // never saw this press, so it is reported from here.
+    if (!sentPaidCall) reportPress(err.moderated ? "refused" : "failed", err.message);
     /* A safety refusal is reported as itself, not as a failure. The software
        did its job and the answer was no; "Restore failed" in front of that
        tells a reviewer something is broken and sends them looking for a fault
@@ -10590,6 +11018,7 @@ async function runFreeUpscale() {
   const img = state.mainImage;
   if (!btn || !img) return;
   const owner = activePage();
+  const pixIdAtPress = state.pixId || "";
   rememberImageBeforeAI(owner, img);
   btn.disabled = true;
   btn.classList.add("working");
@@ -10604,6 +11033,10 @@ async function runFreeUpscale() {
     const form = new FormData();
     form.append("width", String(c.width));
     form.append("height", String(c.height));
+    // For the AI Usage audit, which the server records for every Free Upscale.
+    form.append("pixId", pixIdAtPress);
+    form.append("pageId", owner?.id || "");
+    form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
     form.append("image", blob, "source.png");
     const resp = await fetch("/api/free-upscale", { method: "POST", body: form });
     const data = await resp.json().catch(() => ({}));

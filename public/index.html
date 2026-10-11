@@ -138,6 +138,12 @@
           <svg width="17" height="17" aria-hidden="true"><use href="#i-check"/></svg>
           <span>Writers</span>
         </button>
+        <!-- Who pressed the image-AI buttons, on which post, and what came
+             back. Admin only, like the roster: it is reporting about people. -->
+        <button type="button" class="view-tab admin-only" data-view="imageai" role="tab" aria-selected="false">
+          <svg width="17" height="17" aria-hidden="true"><use href="#i-spark"/></svg>
+          <span>AI Usage</span>
+        </button>
       </div>
 
       <div class="cms-sidebar-foot">
@@ -1442,6 +1448,123 @@
       </section>
 
     </div>
+  </section>
+
+  <!-- ═══ AI Usage (admin only) ═══
+       Every press of AI Upscale, Reframe, Free Upscale and Undo: counted per
+       person and per post, with what each paid press cost and the picture it
+       produced. Built from /api/image-actions, which refuses anyone else. -->
+  <section class="analytics-shell imageai-shell" id="imageai-view" hidden>
+    <header class="analytics-intro">
+      <div class="analytics-intro-actions">
+        <span class="analytics-updated" id="imageai-updated">Waiting for data</span>
+        <button type="button" class="btn-ghost analytics-refresh" id="imageai-refresh">Refresh data</button>
+      </div>
+    </header>
+
+    <p class="status-text" id="imageai-status" role="status" aria-live="polite"></p>
+
+    <section class="analytics-filterbar" aria-label="AI usage filters">
+      <div class="analytics-filterbar-copy">
+        <span class="analytics-card-label">View</span>
+        <strong>Image AI buttons</strong>
+        <span id="imageai-filter-summary">Today · Everyone · All buttons</span>
+      </div>
+      <div class="analytics-filterbar-controls">
+        <label class="analytics-roster-filter">
+          <span>Person</span>
+          <select id="imageai-user" class="imageai-select">
+            <option value="">Everyone</option>
+          </select>
+        </label>
+        <label class="analytics-roster-filter">
+          <span>Button</span>
+          <select id="imageai-action" class="imageai-select">
+            <option value="">All buttons</option>
+            <option value="ai_upscale">AI Upscale (paid)</option>
+            <option value="reframe">Reframe (paid)</option>
+            <option value="free_upscale">Free Upscale</option>
+            <option value="undo">Undo AI Enhance</option>
+          </select>
+        </label>
+        <div class="analytics-roster-filter analytics-roster-dates">
+          <span>Date</span>
+          <input type="date" id="imageai-from" aria-label="From date" />
+          <span class="analytics-date-separator">to</span>
+          <input type="date" id="imageai-to" aria-label="To date" />
+        </div>
+        <button type="button" class="analytics-filter-apply" id="imageai-apply">Apply</button>
+        <button type="button" class="analytics-filter-clear" id="imageai-reset">Reset</button>
+      </div>
+    </section>
+
+    <section class="analytics-hero imageai-hero">
+      <div class="analytics-stat-card accent-a">
+        <span class="analytics-stat-label">AI Upscale</span>
+        <strong class="analytics-stat-value" data-imageai-value="ai_upscale">0</strong>
+        <span class="analytics-stat-sub">Paid presses</span>
+      </div>
+      <div class="analytics-stat-card accent-e">
+        <span class="analytics-stat-label">Reframe</span>
+        <strong class="analytics-stat-value" data-imageai-value="reframe">0</strong>
+        <span class="analytics-stat-sub">Paid presses</span>
+      </div>
+      <div class="analytics-stat-card accent-b">
+        <span class="analytics-stat-label">Free Upscale</span>
+        <strong class="analytics-stat-value" data-imageai-value="free_upscale">0</strong>
+        <span class="analytics-stat-sub">No OpenAI cost</span>
+      </div>
+      <div class="analytics-stat-card accent-c">
+        <span class="analytics-stat-label">Undo</span>
+        <strong class="analytics-stat-value" data-imageai-value="undo">0</strong>
+        <span class="analytics-stat-sub">Back to the original</span>
+      </div>
+      <div class="analytics-stat-card accent-d">
+        <span class="analytics-stat-label">OpenAI cost</span>
+        <strong class="analytics-stat-value" data-imageai-value="cost">$0.00</strong>
+        <span class="analytics-stat-sub" id="imageai-cost-sub">Measured per press</span>
+      </div>
+    </section>
+
+    <section class="analytics-grid">
+      <article class="analytics-card analytics-card-wide">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">People</span>
+            <h3>Presses by person</h3>
+            <p class="analytics-roster-desc">Pick a name to see only their presses.</p>
+          </div>
+        </div>
+        <div class="imageai-table-wrap" id="imageai-people"></div>
+      </article>
+    </section>
+
+    <section class="analytics-grid">
+      <article class="analytics-card analytics-card-wide">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Posts</span>
+            <h3>Presses by post</h3>
+            <p class="analytics-roster-desc">"Presses" lists every press on that post below, with the pictures.</p>
+          </div>
+        </div>
+        <div class="imageai-table-wrap" id="imageai-posts"></div>
+      </article>
+    </section>
+
+    <section class="analytics-grid">
+      <article class="analytics-card analytics-card-wide">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Results</span>
+            <h3 id="imageai-events-title">Every press</h3>
+            <p class="analytics-roster-desc" id="imageai-events-desc">Newest first. Click a picture to open it full size.</p>
+          </div>
+          <button type="button" class="btn-ghost" id="imageai-post-clear" hidden>Show all posts</button>
+        </div>
+        <ol class="imageai-events" id="imageai-events"></ol>
+      </article>
+    </section>
   </section>
 
   <!-- ═══ Confirmation dialog ═══

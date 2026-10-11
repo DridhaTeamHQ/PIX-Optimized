@@ -1832,6 +1832,13 @@ body.view-writers .edit-sheet {
   display: none !important;
 }
 
+body.view-imageai .app-shell,
+body.view-imageai .fab,
+body.view-imageai .sheet-backdrop,
+body.view-imageai .edit-sheet {
+  display: none !important;
+}
+
 /* ─── QA review page ──────────────────────────────────────── */
 
 .review-shell {
