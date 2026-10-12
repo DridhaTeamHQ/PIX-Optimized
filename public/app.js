@@ -1687,8 +1687,25 @@ function inferDailyMattrKeywords() {
 function defaultDailyMattrContent() {
   const headline = cleanHeadlineForPublish(state.headline);
   const detail = normalizeDetailTextClient(state.detailText || "");
-  if (!headline) return "";
+  if (!headline) return storyPagesCaption();
   return detail ? `${headline}\n\n${detail}`.trim() : headline;
+}
+
+/* The caption for a post with no poster headline: the first Story page in
+   the rail that has words on it, heading then body. Without this a
+   stories-only post opened with an empty caption box. The selected page's
+   copy is still in live state, not yet folded into its page.content. */
+function storyPagesCaption() {
+  for (const card of slotOrder) {
+    const page = getPage(card.el?.dataset?.page || "base");
+    if (page.type !== "story") continue;
+    const src = page === activePage() ? state : (page.content || {});
+    const heading = (src.storyHeading || "").replace(/\s+/g, " ").trim();
+    const body = (src.storyBody || "").trim();
+    const text = [heading, body].filter(Boolean).join("\n\n");
+    if (text) return text;
+  }
+  return "";
 }
 
 function syncDailyMattrDraft({ force = false } = {}) {
@@ -12640,10 +12657,11 @@ async function publishToDailyMattr({ skipConfirm = false } = {}) {
     setDailyMattrStatus("Sign in to publish.", "error");
     return;
   }
-  if (!state.headline.trim()) {
-    setDailyMattrStatus("Build a poster first.", "error");
-    return;
-  }
+  /* No poster requirement. A post made only of Story (or Video) pages is a
+     complete post — it has no poster headline because none of its pages
+     shows one — and this used to refuse it with "Build a poster first."
+     DailyMattr needs a caption, a category and at least one media file; each
+     is checked below, and an empty rail is caught after the pages render. */
   /* The states that make publishing wrong rather than merely unnecessary.
      syncPublishState() has already disabled the button for each of them, so
      this is the belt to that braces — the button can be re-enabled by the
