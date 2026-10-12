@@ -1242,7 +1242,7 @@ function noteAIImage(page, image) {
 function revertImageToOriginal() {
   const page = activePage();
   const entry = imageUndoEntry(page);
-  if (!entry || !canUndoImage(page)) return;
+  if (!entry || !canUndoImage(page) || imageJobFor(page)) return;
 
   commitFieldToPage(page, "mainImage", entry.image);
   commitFieldToPage(page, "imageOffset", { ...entry.offset });
@@ -1261,15 +1261,113 @@ function revertImageToOriginal() {
   reportImageAction("undo", "success", { page, pixId: state.pixId });
 }
 
-/* Enable the button only when there is something behind it. Called from the
-   end of renderPoster(), which is the one place that runs after every change
-   to the picture with the live page's values restored — the per-card paint
-   sees whichever page it is drawing, not the one on screen. */
-function syncImageUndoUI() {
-  const btn = document.getElementById("image-undo-btn");
-  if (!btn) return;
-  const enhancing = document.getElementById("ai-enhance-btn")?.classList.contains("working");
-  btn.disabled = Boolean(enhancing) || !canUndoImage(activePage());
+/* ── One image job per page ──────────────────────────────────────────────
+
+   AI Upscale, Free Upscale and Reframe each take 30-120 seconds, and a story
+   set is several slides that each want their own. The result already went to
+   the page it was pressed on (see commitFieldToPage), but the job itself lived
+   on the BUTTON — `working` on it, one status line under it — so a job started
+   on slide 2 showed as running on every slide, greyed the buttons out
+   everywhere, and held slide 3's upscale until slide 2's came back.
+
+   So the job, its last message and its Reframe count belong to the page,
+   keyed by id like imageUndo, and the panel is only a view of whichever page
+   is selected — syncImageAIUI() repaints it from here on every render, which
+   includes every page switch. One job per page at a time, because two on the
+   same picture would race to replace it; any number across pages. */
+const imageJobs = new Map();       // page id -> "ai_upscale" | "free_upscale" | "reframe"
+const imageJobStatus = new Map();  // page id -> { msg, kind }
+
+const IMAGE_JOB_BUTTONS = {
+  ai_upscale: "ai-enhance-btn",
+  free_upscale: "free-upscale-btn",
+  reframe: "ai-reframe-btn",
+};
+// What a slide in the rail says while its job runs.
+const IMAGE_JOB_BADGES = {
+  ai_upscale: "AI upscaling…",
+  free_upscale: "Upscaling…",
+  reframe: "Reframing…",
+};
+
+function imageJobFor(page) {
+  return page ? imageJobs.get(page.id) || null : null;
+}
+
+/* Reframe is a paid full redraw, so each page gets two. Counted on success
+   only, per post AND page: page ids restart at page-1 on every reload, so a
+   count keyed by id alone followed the writer from one post's first story
+   slide to the next one's. The server keys its copy of the cap the same way,
+   so the number on the button is the number it enforces. */
+const REFRAME_LIMIT_PER_PIX = 2;
+const reframeUses = new Map();
+function reframeKey(page, pixId = state.pixId) {
+  return `${pixId || ""}|${page.id}`;
+}
+function reframesLeft(page) {
+  if (!page) return 0;
+  return Math.max(0, REFRAME_LIMIT_PER_PIX - (reframeUses.get(reframeKey(page)) || 0));
+}
+
+/* The status line under the buttons, for one page. A job reports to the page
+   it was pressed on; the line only shows it while that page is selected, and
+   shows it again when the writer comes back to it. */
+function setEnhanceStatus(msg, kind, page = activePage()) {
+  if (page) {
+    if (msg) imageJobStatus.set(page.id, { msg, kind: kind || "" });
+    else imageJobStatus.delete(page.id);
+  }
+  if (page === activePage()) paintEnhanceStatus();
+}
+
+function paintEnhanceStatus() {
+  const el = document.getElementById("ai-enhance-status");
+  if (!el) return;
+  const page = activePage();
+  const status = page ? imageJobStatus.get(page.id) : null;
+  el.className = "status-text" + (status?.kind ? ` ${status.kind}` : "");
+  el.textContent = status?.msg || "";
+}
+
+/* The image buttons, the undo and the status line, for the page on screen.
+   Called from the end of renderPoster(), which is the one place that runs
+   after every change to the picture — and after every page switch — with the
+   live page's values restored; the per-card paint sees whichever page it is
+   drawing, not the one on screen. */
+function syncImageAIUI() {
+  const page = activePage();
+  const job = imageJobFor(page);
+  const hasImage = Boolean(imageOnPage(page));
+
+  for (const [kind, id] of Object.entries(IMAGE_JOB_BUTTONS)) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.classList.toggle("working", job === kind);
+    btn.disabled = !hasImage || Boolean(job);
+  }
+  const reframeBtn = document.getElementById("ai-reframe-btn");
+  if (reframeBtn) {
+    const left = reframesLeft(page);
+    const label = reframeBtn.querySelector(".reframe-label");
+    if (label) label.textContent = left > 0 ? `Reframe (${left} left)` : "Reframe (limit reached)";
+    if (left <= 0 && job !== "reframe") reframeBtn.disabled = true;
+  }
+  const undoBtn = document.getElementById("image-undo-btn");
+  if (undoBtn) undoBtn.disabled = Boolean(job) || !canUndoImage(page);
+  paintEnhanceStatus();
+
+  /* Every slide with a job running says so in the rail, so a writer who has
+     moved on to the next story can see the last one is still cooking. */
+  for (const p of pages) {
+    const badge = IMAGE_JOB_BADGES[imageJobFor(p)] || "";
+    for (const card of p.cards) {
+      card.el.classList.toggle("is-ai-busy", Boolean(badge));
+      const box = card.el.querySelector(".canvas-container");
+      if (!box) continue;
+      if (badge) box.dataset.aiBusy = badge;
+      else delete box.dataset.aiBusy;
+    }
+  }
 }
 
 /* The page a pending image pick belongs to.
@@ -3644,9 +3742,9 @@ function renderPoster(opts) {
     applyPageFields(live);
     if (currentModalCard) updateScreenPreviewModal();
     // After applyPageFields(live), not before: the paint loop leaves state
-    // holding whichever page it drew last, and the button belongs to the page
+    // holding whichever page it drew last, and the buttons belong to the page
     // on screen.
-    syncImageUndoUI();
+    syncImageAIUI();
   }
 }
 
@@ -4473,15 +4571,10 @@ function paintPoster() {
     drawEngagementBar();
     drawNavBar();
   }
-
-  // AI Enhance is only meaningful once a real background image is loaded
-  const enhanceBtn = document.getElementById("ai-enhance-btn");
-  syncReframeUI();
-  const freeBtn = document.getElementById("free-upscale-btn");
-  if (freeBtn && !freeBtn.classList.contains("working")) freeBtn.disabled = !state.mainImage;
-  if (enhanceBtn && !enhanceBtn.classList.contains("working")) {
-    enhanceBtn.disabled = !state.mainImage;
-  }
+  /* The image buttons are not synced from here. This runs once per CARD, with
+     state holding whichever page is being drawn, so it enabled them off page
+     1's picture whatever slide was selected. renderPoster() syncs them after
+     the loop instead — see syncImageAIUI(). */
 }
 
 /**
@@ -9810,29 +9903,8 @@ if (copyAllBtn) {
 
 const aiEnhanceBtn    = document.getElementById("ai-enhance-btn");
 const aiReframeBtn    = document.getElementById("ai-reframe-btn");
-/* Reframe is a paid full redraw, so each pix (page) gets two. Counted on
-   success only; the server holds the same cap per user and page. */
-const REFRAME_LIMIT_PER_PIX = 2;
-const reframeUses = new Map();
-function reframesLeft(page) {
-  if (!page) return 0;
-  return Math.max(0, REFRAME_LIMIT_PER_PIX - (reframeUses.get(page.id) || 0));
-}
-function syncReframeUI() {
-  const btn = document.getElementById("ai-reframe-btn");
-  if (!btn || btn.classList.contains("working")) return;
-  const left = reframesLeft(activePage());
-  const label = btn.querySelector(".reframe-label");
-  if (label) label.textContent = left > 0 ? `Reframe (${left} left)` : "Reframe (limit reached)";
-  btn.disabled = !state.mainImage || left <= 0;
-}
-const aiEnhanceStatus = document.getElementById("ai-enhance-status");
-
-function setEnhanceStatus(msg, kind) {
-  if (!aiEnhanceStatus) return;
-  aiEnhanceStatus.className = "status-text" + (kind ? ` ${kind}` : "");
-  aiEnhanceStatus.textContent = msg || "";
-}
+// The Reframe cap, the job in flight and the status line are per page — see
+// imageJobs and syncImageAIUI() beside the undo slot.
 
 /* The admin's AI Usage screen counts every press of the image buttons. The
    server records each press that reaches it — with the cost and the picture
@@ -10651,12 +10723,15 @@ function composeExpandResult(resultImg, srcCanvas, baseFrame, place, scale = 1, 
 }
 
 async function runImageAI(modeOverride) {
-  const btn = modeOverride === "reframe" ? aiReframeBtn : aiEnhanceBtn;
   const requestedMode = modeOverride || enhanceModeSel?.value || "restore";
   const img = state.mainImage;
-  if (!img || !btn) return;
   // Whose picture this is. Read before the first await — see the commit below.
   const enhanceOwner = activePage();
+  // One job per page; another slide can start its own meanwhile.
+  if (!img || imageJobFor(enhanceOwner)) return;
+  const jobKind = requestedMode === "reframe" ? "reframe" : "ai_upscale";
+  // Every message goes to the page pressed on, whichever one is on screen.
+  const say = (msg, kind) => setEnhanceStatus(msg, kind, enhanceOwner);
   /* For the AI Usage audit: the post this press was made on, read now — the
      call takes 30-90 seconds and the reviewer may have opened another post by
      the time it ends. `sentPaidCall` marks the point after which the server
@@ -10668,8 +10743,8 @@ async function runImageAI(modeOverride) {
   });
   let sentPaidCall = false;
   if (requestedMode === "reframe" && reframesLeft(enhanceOwner) <= 0) {
-    setEnhanceStatus(`Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.`);
-    reportPress("limit", `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.`);
+    say(`Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`);
+    reportPress("limit", `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`);
     return;
   }
   /* Before anything is spent. Taken here rather than beside the commit so the
@@ -10679,9 +10754,9 @@ async function runImageAI(modeOverride) {
      image. */
   rememberImageBeforeAI(enhanceOwner, img);
 
-  btn.disabled = true;
-  btn.classList.add("working");
-  setEnhanceStatus(ENHANCE_WORKING[requestedMode] || ENHANCE_WORKING.auto);
+  imageJobs.set(enhanceOwner.id, jobKind);
+  say(ENHANCE_WORKING[requestedMode] || ENHANCE_WORKING.auto);
+  syncImageAIUI();
 
   try {
     // Snapshot the current background to a temp canvas, capped at 1536 on
@@ -10756,22 +10831,20 @@ async function runImageAI(modeOverride) {
         commitFieldToPage(enhanceOwner, "filterContrast", auto.contrast);
         commitFieldToPage(enhanceOwner, "filterSaturation", auto.saturation);
         renderPoster();
-        setEnhanceStatus(
+        say(
           `Adjusted it here instead — ${toneSummary}. ` +
           `At ${rawW}×${rawH} it is already larger than the AI can return ` +
           `(${MODEL_CEILING_PX}px), so the call would have shrunk it. No credits used.`,
           "success",
         );
       } else {
-        setEnhanceStatus(
+        say(
           `This photograph does not need it. ${rawW}×${rawH} is larger than the AI can ` +
           `return (${MODEL_CEILING_PX}px), and its exposure and contrast already measure fine. ` +
           `Nothing changed, no credits used.`,
           "success",
         );
       }
-      btn.disabled = false;
-      btn.classList.remove("working");
       return;
     }
 
@@ -10946,7 +11019,7 @@ async function runImageAI(modeOverride) {
       const target = RATIO_ASPECTS[state.aspectRatio] || 9 / 16;
       const sameShape = Math.abs(Math.log((rawW / rawH) / target)) < 0.06;
       if (sameShape && longEdge >= MODEL_CEILING_PX) {
-        setEnhanceStatus(
+        say(
           `This photograph is already ${state.aspectRatio || "9:16"} at ${rawW}×${rawH} — larger than the AI ` +
           `can return (${MODEL_CEILING_PX}px), so a redraw could only shrink it. ` +
           `${toneHelps ? `Adjusted it here instead — ${toneSummary}. ` : ""}No credits used.`,
@@ -10954,13 +11027,11 @@ async function runImageAI(modeOverride) {
         );
         if (toneHelps) renderPoster();
         reportPress("skipped", `Already ${state.aspectRatio || "9:16"} at ${rawW}×${rawH} — a redraw could only shrink it.`);
-        btn.disabled = false;
-        btn.classList.remove("working");
         return;
       }
     }
 
-    setEnhanceStatus(place
+    say(place
       ? `Expanding — drawing the scene outward from the photo${plan.reason ? ` (${plan.reason})` : ""} (30–90s)…`
       : plan.mode === "reframe"
         ? ENHANCE_WORKING.reframe
@@ -11035,7 +11106,8 @@ async function runImageAI(modeOverride) {
     if (!resp.ok) throw enhanceError(data, resp.status);
     if (!data.image) throw new Error("No image returned.");
     if (requestedMode === "reframe" && enhanceOwner) {
-      reframeUses.set(enhanceOwner.id, (reframeUses.get(enhanceOwner.id) || 0) + 1);
+      const key = reframeKey(enhanceOwner, pixIdAtPress);
+      reframeUses.set(key, (reframeUses.get(key) || 0) + 1);
     }
 
     /* A second round trip, and a cheap one: the answer above carried an
@@ -11196,7 +11268,7 @@ async function runImageAI(modeOverride) {
     const billed = data.cached
       ? " (from cache, no charge)"
       : (data.cost ? ` — $${data.cost.usd.toFixed(3)}` : "");
-    setEnhanceStatus(
+    say(
       `✓ ${label.done}${fitted} via ${engineLabel}${billed}${why}. Re-pick a stock image to undo.`,
       "success",
     );
@@ -11210,21 +11282,19 @@ async function runImageAI(modeOverride) {
        that is not there. It is also the one refusal they can act on — by
        publishing the photograph as it is. */
     if (err.moderated) {
-      setEnhanceStatus(err.message, "success");
+      say(err.message, "success");
     } else {
       // Before the plan lands there is no resolved mode, so the failure is
       // named after what was asked for. On auto that is neither job yet.
       const failed = ENHANCE_LABELS[requestedMode]?.failed || "Enhance failed";
-      setEnhanceStatus(`${failed}: ${err.message}`, "error");
+      say(`${failed}: ${err.message}`, "error");
     }
   } finally {
-    btn.classList.remove("working");
-    btn.disabled = !state.mainImage;
-    syncReframeUI();
-    // Re-read after "working" comes off: syncImageUndoUI() greys the undo out
-    // for the duration of a call, and nothing else would put it back on the
-    // failure path.
-    syncImageUndoUI();
+    imageJobs.delete(enhanceOwner.id);
+    // Re-read once the job is off the page: the buttons and the undo are
+    // greyed out for the duration of a call, and nothing else would put them
+    // back on the failure path.
+    syncImageAIUI();
   }
 }
 
@@ -11235,15 +11305,16 @@ if (aiReframeBtn) aiReframeBtn.addEventListener("click", () => runImageAI("refra
    picture at its native size and puts the enlarged copy back on the same
    page, keeping the writer's zoom and pan. Undo AI Enhance reverts it too. */
 async function runFreeUpscale() {
-  const btn = document.getElementById("free-upscale-btn");
   const img = state.mainImage;
-  if (!btn || !img) return;
   const owner = activePage();
+  // One job per page; another slide can start its own meanwhile.
+  if (!img || imageJobFor(owner)) return;
+  const say = (msg, kind) => setEnhanceStatus(msg, kind, owner);
   const pixIdAtPress = state.pixId || "";
   rememberImageBeforeAI(owner, img);
-  btn.disabled = true;
-  btn.classList.add("working");
-  setEnhanceStatus("Free Upscale — restoring detail on our own server. This can take up to 2 minutes, no OpenAI cost…");
+  imageJobs.set(owner.id, "free_upscale");
+  say("Free Upscale — restoring detail on our own server. This can take up to 2 minutes, no OpenAI cost…");
+  syncImageAIUI();
   try {
     const c = document.createElement("canvas");
     c.width = img.naturalWidth || img.width;
@@ -11271,25 +11342,26 @@ async function runFreeUpscale() {
     noteAIImage(owner, out);
     await ensureImageFocalPoint(out);
     commitFieldToPage(owner, "mainImage", out);
+    // Repaint now: the slide may not be the one on screen, and its card in
+    // the rail would otherwise keep the old picture until something else drew.
+    renderPoster();
     const how = data.ai ? "AI detail restore" : "enlarge + sharpen";
     const grew = out.width > c.width;
-    setEnhanceStatus(grew
+    say(grew
       ? `Free Upscale done (${how}) — ${c.width}x${c.height} → ${out.width}x${out.height}, no OpenAI cost.`
       : `Already high resolution (${c.width}x${c.height}) — sharpened only, no OpenAI cost.`);
   } catch (err) {
-    setEnhanceStatus(err.message || "Free Upscale failed.");
+    say(err.message || "Free Upscale failed.");
   } finally {
-    btn.classList.remove("working");
-    btn.disabled = !state.mainImage;
-    syncImageUndoUI();
+    imageJobs.delete(owner.id);
+    syncImageAIUI();
   }
 }
 document.getElementById("free-upscale-btn")?.addEventListener("click", () => runFreeUpscale());
-syncReframeUI();
 
 const imageUndoBtn = document.getElementById("image-undo-btn");
 if (imageUndoBtn) imageUndoBtn.addEventListener("click", () => revertImageToOriginal());
-syncImageUndoUI();
+syncImageAIUI();
 
 /* ── Theme toggle (dark default; persisted in localStorage) ── */
 (function initThemeToggle() {

@@ -6253,7 +6253,7 @@ async function enhanceSpendGate(req, res) {
    does not parse falls to the conservative value rather than to a 400, for
    the same reason the mode header does. */
 const REFRAME_LIMIT_PER_PIX = Number(process.env.REFRAME_LIMIT_PER_PIX) || 2;
-// In memory: resets on redeploy, which is fine for a per-pix cap.
+// In memory: resets on redeploy, which is fine for a per-page cap.
 const reframeCounts = new Map();
 
 async function handleEnhanceEditStage(req, res) {
@@ -6285,16 +6285,19 @@ async function handleEnhanceEditStage(req, res) {
   // The press, as the AI Usage screen will show it. Recorded on every way out.
   const audit = { action: actionForJob(requestedJob), job: requestedJob, ...auditFields(fields) };
 
-  /* Reframe is the costly job: two per pix (page), per user. Checked before
-     the spend gate so a refused press reserves nothing. */
+  /* Reframe is the costly job: two per page (each story slide its own), per
+     user. Keyed by post as well as page: the editor's page ids restart at
+     page-1 on every load, so a key without the post let one story's slide 1
+     spend the next story's slide 1. Checked before the spend gate so a
+     refused press reserves nothing. */
   const isReframe = String(fields.mode || "").toLowerCase() === "reframe";
   let reframeKey = null;
   if (isReframe) {
     const user = await currentUser(req);
     const who = user?.username ? `u:${user.username}` : `ip:${clientKey(req)}`;
-    reframeKey = `${who}|${String(fields.pageId || "").slice(0, 100)}`;
+    reframeKey = `${who}|${audit.pixId || ""}|${audit.pageId || ""}`;
     if ((reframeCounts.get(reframeKey) || 0) >= REFRAME_LIMIT_PER_PIX) {
-      const error = `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.`;
+      const error = `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`;
       sendJson(res, 429, { error });
       logImageAction(req, { ...audit, outcome: "limit", error }, { before: image });
       return;
