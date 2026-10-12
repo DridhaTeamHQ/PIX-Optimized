@@ -883,7 +883,15 @@
             <div id="story-fields" hidden>
               <h3 class="acc-subtitle">Story Page</h3>
               <textarea id="story-heading-edit" rows="2" placeholder="Short heading for this slide..."></textarea>
-              <small class="helper-text">Wrap words in [brackets] or (parens) for the first accent colour, or {braces} for the second. Left plain, the whole heading is highlighted.</small>
+              <div style="margin:8px 0;">
+                <span class="field-label" style="display:block;margin-bottom:6px;">Heading colour</span>
+                <div class="preset-grid" id="story-heading-style" role="group" aria-label="Heading colour">
+                  <button type="button" class="preset-btn active" data-heading-style="white" title="White heading on the photo">White</button>
+                  <button type="button" class="preset-btn"        data-heading-style="blue"  title="Blue boxes behind the heading, like the poster title">Blue box</button>
+                  <button type="button" class="preset-btn"        data-heading-style="blue-text" title="Heading text in the brand blue, no boxes">Blue text</button>
+                </div>
+              </div>
+              <small class="helper-text">White: wrap words in [brackets] or (parens) to colour them with the first accent, or {braces} for the second. Blue box: the whole heading sits on boxes like the poster title. Blue text: the whole heading in the brand blue. In both blue styles, {braces} use the second accent.</small>
               <textarea id="story-body-edit" rows="6" placeholder="The paragraph for this slide..."></textarea>
               <small class="helper-text">Belongs to this page only — each story slide carries its own copy.</small>
             </div>
@@ -924,6 +932,7 @@
             <h3 class="acc-subtitle">Tag Badge</h3>
             <div class="preset-grid" id="tag-presets">
               <button type="button" class="preset-btn active" data-tag="none"          title="No Tag">None</button>
+              <button type="button" class="preset-btn"        data-tag="daily-wrap"    title="Daily Wrap with clock">🕙 Daily Wrap</button>
               <button type="button" class="preset-btn"        data-tag="trending"      title="Trending with icon">🔥 Trending</button>
               <button type="button" class="preset-btn"        data-tag="trending-text" title="Trending text only">Trending</button>
               <button type="button" class="preset-btn"        data-tag="breaking"      title="Breaking with icon">⚡ Breaking</button>
