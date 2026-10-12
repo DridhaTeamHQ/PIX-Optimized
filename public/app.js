@@ -309,6 +309,7 @@ const state = {
   /* Live values for the selected story page. Like every other page field
      these are swapped in and out by setActivePage; the page keeps the copy. */
   storyHeading: "",
+  storyHeadingStyle: "white",   // see STORY_HEADING_STYLES
   storyBody: "",
   storyOverlayOpacity: 100,
   /* Unfinished until the writer says otherwise. Defaulting to false meant a
@@ -324,7 +325,7 @@ const state = {
   videoCaption: "",         // burned into the clip, bottom-anchored
   videoCaptionSize: 48,     // design px at 920×1700; scaled per ratio — poster headline size
   secondLogoImage: null,
-  tag: "none",       // "none" | "trending" | "breaking" | "swipe-video" (+ "-text" variants)
+  tag: "none",       // "none" | "daily-wrap" | "trending" | "breaking" | "swipe-video" (+ "-text" variants)
   tagImages: {},     // { trending: Image, breaking: Image } — SVG-backed tags only
   isDownloading: false,
   forceTextExport: false,
@@ -629,9 +630,22 @@ const TAG_ICON_BOX   = 22;   // the glyph is drawn inside this square
 const TAG_ICON_GAP   = 10;   // space between glyph and label
 const TAG_FONT       = "600 21px 'Poppins', 'Segoe UI', Arial, sans-serif";
 
-// Brand blue, matching the headline accent.
+/* Daily Wrap is the app's own segment, so it gets a chip instead of a news
+   bar: taller, rounded, bold caps, led by a clock face, in the Trending
+   SVG's orange. Sized up from the 37px bar because the editor preview shows
+   the poster at about a third of its size, where 21px caps turned to mush. */
+const TAG_CHIP_HEIGHT   = 50;
+const TAG_CHIP_RADIUS   = 10;
+const TAG_CHIP_PAD_X    = 16;
+const TAG_CHIP_ICON_BOX = 32;
+const TAG_CHIP_ICON_GAP = 10;
+const TAG_CHIP_FONT     = "700 27px 'Poppins', 'Segoe UI', Arial, sans-serif";
+
+// Swipe uses the brand blue that matches the headline accent. `flush` lines
+// the badge's left edge up with the headline's visible left edge.
 const DRAWN_TAGS = {
-  "swipe-video":      { label: "Swipe for Video", bg: "#3979FF", icon: true },
+  "daily-wrap":       { label: "DAILY WRAP",      bg: "#EB6329", icon: "clock", chip: true, flush: true },
+  "swipe-video":      { label: "Swipe for Video", bg: "#3979FF", icon: "play" },
   "swipe-video-text": { label: "Swipe for Video", bg: "#3979FF", icon: false }
 };
 
@@ -649,6 +663,7 @@ document.fonts.ready.then(async () => {
     await document.fonts.load("700 46px 'Roboto Serif'");
     await document.fonts.load("500 41px 'Roboto Serif'");
     await document.fonts.load(TAG_FONT);
+    await document.fonts.load(TAG_CHIP_FONT);
   } catch (e) { /* font may already be loaded */ }
   await waitForImage(defaultMain);
   await ensureImageFocalPoint(defaultMain);
@@ -1227,7 +1242,7 @@ function noteAIImage(page, image) {
 function revertImageToOriginal() {
   const page = activePage();
   const entry = imageUndoEntry(page);
-  if (!entry || !canUndoImage(page)) return;
+  if (!entry || !canUndoImage(page) || imageJobFor(page)) return;
 
   commitFieldToPage(page, "mainImage", entry.image);
   commitFieldToPage(page, "imageOffset", { ...entry.offset });
@@ -1246,15 +1261,113 @@ function revertImageToOriginal() {
   reportImageAction("undo", "success", { page, pixId: state.pixId });
 }
 
-/* Enable the button only when there is something behind it. Called from the
-   end of renderPoster(), which is the one place that runs after every change
-   to the picture with the live page's values restored — the per-card paint
-   sees whichever page it is drawing, not the one on screen. */
-function syncImageUndoUI() {
-  const btn = document.getElementById("image-undo-btn");
-  if (!btn) return;
-  const enhancing = document.getElementById("ai-enhance-btn")?.classList.contains("working");
-  btn.disabled = Boolean(enhancing) || !canUndoImage(activePage());
+/* ── One image job per page ──────────────────────────────────────────────
+
+   AI Upscale, Free Upscale and Reframe each take 30-120 seconds, and a story
+   set is several slides that each want their own. The result already went to
+   the page it was pressed on (see commitFieldToPage), but the job itself lived
+   on the BUTTON — `working` on it, one status line under it — so a job started
+   on slide 2 showed as running on every slide, greyed the buttons out
+   everywhere, and held slide 3's upscale until slide 2's came back.
+
+   So the job, its last message and its Reframe count belong to the page,
+   keyed by id like imageUndo, and the panel is only a view of whichever page
+   is selected — syncImageAIUI() repaints it from here on every render, which
+   includes every page switch. One job per page at a time, because two on the
+   same picture would race to replace it; any number across pages. */
+const imageJobs = new Map();       // page id -> "ai_upscale" | "free_upscale" | "reframe"
+const imageJobStatus = new Map();  // page id -> { msg, kind }
+
+const IMAGE_JOB_BUTTONS = {
+  ai_upscale: "ai-enhance-btn",
+  free_upscale: "free-upscale-btn",
+  reframe: "ai-reframe-btn",
+};
+// What a slide in the rail says while its job runs.
+const IMAGE_JOB_BADGES = {
+  ai_upscale: "AI upscaling…",
+  free_upscale: "Upscaling…",
+  reframe: "Reframing…",
+};
+
+function imageJobFor(page) {
+  return page ? imageJobs.get(page.id) || null : null;
+}
+
+/* Reframe is a paid full redraw, so each page gets two. Counted on success
+   only, per post AND page: page ids restart at page-1 on every reload, so a
+   count keyed by id alone followed the writer from one post's first story
+   slide to the next one's. The server keys its copy of the cap the same way,
+   so the number on the button is the number it enforces. */
+const REFRAME_LIMIT_PER_PIX = 2;
+const reframeUses = new Map();
+function reframeKey(page, pixId = state.pixId) {
+  return `${pixId || ""}|${page.id}`;
+}
+function reframesLeft(page) {
+  if (!page) return 0;
+  return Math.max(0, REFRAME_LIMIT_PER_PIX - (reframeUses.get(reframeKey(page)) || 0));
+}
+
+/* The status line under the buttons, for one page. A job reports to the page
+   it was pressed on; the line only shows it while that page is selected, and
+   shows it again when the writer comes back to it. */
+function setEnhanceStatus(msg, kind, page = activePage()) {
+  if (page) {
+    if (msg) imageJobStatus.set(page.id, { msg, kind: kind || "" });
+    else imageJobStatus.delete(page.id);
+  }
+  if (page === activePage()) paintEnhanceStatus();
+}
+
+function paintEnhanceStatus() {
+  const el = document.getElementById("ai-enhance-status");
+  if (!el) return;
+  const page = activePage();
+  const status = page ? imageJobStatus.get(page.id) : null;
+  el.className = "status-text" + (status?.kind ? ` ${status.kind}` : "");
+  el.textContent = status?.msg || "";
+}
+
+/* The image buttons, the undo and the status line, for the page on screen.
+   Called from the end of renderPoster(), which is the one place that runs
+   after every change to the picture — and after every page switch — with the
+   live page's values restored; the per-card paint sees whichever page it is
+   drawing, not the one on screen. */
+function syncImageAIUI() {
+  const page = activePage();
+  const job = imageJobFor(page);
+  const hasImage = Boolean(imageOnPage(page));
+
+  for (const [kind, id] of Object.entries(IMAGE_JOB_BUTTONS)) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.classList.toggle("working", job === kind);
+    btn.disabled = !hasImage || Boolean(job);
+  }
+  const reframeBtn = document.getElementById("ai-reframe-btn");
+  if (reframeBtn) {
+    const left = reframesLeft(page);
+    const label = reframeBtn.querySelector(".reframe-label");
+    if (label) label.textContent = left > 0 ? `Reframe (${left} left)` : "Reframe (limit reached)";
+    if (left <= 0 && job !== "reframe") reframeBtn.disabled = true;
+  }
+  const undoBtn = document.getElementById("image-undo-btn");
+  if (undoBtn) undoBtn.disabled = Boolean(job) || !canUndoImage(page);
+  paintEnhanceStatus();
+
+  /* Every slide with a job running says so in the rail, so a writer who has
+     moved on to the next story can see the last one is still cooking. */
+  for (const p of pages) {
+    const badge = IMAGE_JOB_BADGES[imageJobFor(p)] || "";
+    for (const card of p.cards) {
+      card.el.classList.toggle("is-ai-busy", Boolean(badge));
+      const box = card.el.querySelector(".canvas-container");
+      if (!box) continue;
+      if (badge) box.dataset.aiBusy = badge;
+      else delete box.dataset.aiBusy;
+    }
+  }
 }
 
 /* The page a pending image pick belongs to.
@@ -1901,6 +2014,18 @@ document.getElementById("story-heading-edit")?.addEventListener("input", (e) => 
   state.storyHeading = e.target.value;
   scheduleRender();
 });
+document.getElementById("story-heading-style")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-heading-style]");
+  if (!btn || activePage()?.type !== "story") return;
+  state.storyHeadingStyle = btn.dataset.headingStyle;
+  syncStoryHeadingStyleButtons();
+  scheduleRender();
+});
+function syncStoryHeadingStyleButtons() {
+  document.querySelectorAll("#story-heading-style [data-heading-style]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.headingStyle === (state.storyHeadingStyle || "white"));
+  });
+}
 document.getElementById("story-body-edit")?.addEventListener("input", (e) => {
   state.storyBody = e.target.value;
   scheduleRender();
@@ -3257,8 +3382,10 @@ const TEXT_PAGE_FIELDS   = [...IMAGE_PAGE_FIELDS];
    its own body copy. That last one is what separates it from a text page —
    a text page takes a SLICE of the post's single paragraph, so its words are
    decided by how many text pages there are. A story page is written directly,
-   which is what you want when each slide makes its own point. */
-const STORY_PAGE_FIELDS  = [...IMAGE_PAGE_FIELDS, "storyHeading", "storyBody", "storyOverlayOpacity"];
+   which is what you want when each slide makes its own point. Its tag badge
+   is its own too, so one slide of a set can carry Daily Wrap and the next
+   nothing. */
+const STORY_PAGE_FIELDS  = [...IMAGE_PAGE_FIELDS, "storyHeading", "storyHeadingStyle", "storyBody", "storyOverlayOpacity", "tag"];
 /* A video page owns its upload and its last encode as well as its clip:
    two video pages that shared `storedVideoUrl` would publish each other's
    footage. */
@@ -3296,8 +3423,9 @@ const PAGE_SCOPE = {
      and storyBody. The post-level headline and paragraph boxes are therefore
      off here: they are not this page's copy, and leaving them live meant a
      writer aiming at the story heading hit the POST headline instead and
-     silently rewrote the poster. Story pages get their own two boxes. */
-  story:  { headline: false, detail: false, tag: false, image: true,  video: false },
+     silently rewrote the poster. Story pages get their own two boxes. The
+     tag is page-owned (see STORY_PAGE_FIELDS), so it is safe to leave live. */
+  story:  { headline: false, detail: false, tag: true,  image: true,  video: false },
   video:  { headline: false, detail: false, tag: false, image: false, video: true  },
 };
 
@@ -3614,9 +3742,9 @@ function renderPoster(opts) {
     applyPageFields(live);
     if (currentModalCard) updateScreenPreviewModal();
     // After applyPageFields(live), not before: the paint loop leaves state
-    // holding whichever page it drew last, and the button belongs to the page
+    // holding whichever page it drew last, and the buttons belong to the page
     // on screen.
-    syncImageUndoUI();
+    syncImageAIUI();
   }
 }
 
@@ -3642,6 +3770,7 @@ function blankPageContent(type) {
     headlineStyle: state.headlineStyle,
     detailText: "",
     storyHeading: "",
+    storyHeadingStyle: "white",
     storyBody: "",
     storyOverlayOpacity: 100,
     videoEl: null,
@@ -3758,8 +3887,10 @@ function serializePages() {
       // A story page carries its own words, so they travel with the page
       // rather than being derived from the post's paragraph on open.
       entry.storyHeading = c.storyHeading || "";
+      entry.headingStyle = storyHeadingStyleOr(c.storyHeadingStyle);
       entry.storyBody = c.storyBody || "";
       entry.overlayOpacity = c.storyOverlayOpacity ?? 100;
+      entry.tag = c.tag || "none";
     }
     if (page.type === "poster") {
       entry.headline = c.headline || "";
@@ -3852,10 +3983,13 @@ function restorePages(list, spine) {
     const content = {};
     if (entry.type === "story") {
       content.storyHeading = entry.storyHeading || "";
+      content.storyHeadingStyle = storyHeadingStyleOr(entry.headingStyle);
       content.storyBody = entry.storyBody || "";
       // `imageOpacity` was briefly written by the first version of this
       // control. Reuse its value for the gradient, but never fade the image.
       content.storyOverlayOpacity = clamp(numberOr(entry.overlayOpacity, numberOr(entry.imageOpacity, 100)), 0, 100);
+      // Story pages saved before they had a tag reopen without one.
+      content.tag = entry.tag || "none";
     }
     if (entry.type === "poster") {
       content.headline = entry.headline || "";
@@ -4199,6 +4333,7 @@ function syncEditorFromState() {
   const bodyEl = document.getElementById("story-body-edit");
   if (storyBox) storyBox.hidden = activePage()?.type !== "story";
   if (headingEl && headingEl.value !== (state.storyHeading || "")) headingEl.value = state.storyHeading || "";
+  syncStoryHeadingStyleButtons();
   if (bodyEl && bodyEl.value !== (state.storyBody || "")) bodyEl.value = state.storyBody || "";
   const storySelected = activePage()?.type === "story";
   if (storyOpacityControl) storyOpacityControl.hidden = !storySelected;
@@ -4436,15 +4571,10 @@ function paintPoster() {
     drawEngagementBar();
     drawNavBar();
   }
-
-  // AI Enhance is only meaningful once a real background image is loaded
-  const enhanceBtn = document.getElementById("ai-enhance-btn");
-  syncReframeUI();
-  const freeBtn = document.getElementById("free-upscale-btn");
-  if (freeBtn && !freeBtn.classList.contains("working")) freeBtn.disabled = !state.mainImage;
-  if (enhanceBtn && !enhanceBtn.classList.contains("working")) {
-    enhanceBtn.disabled = !state.mainImage;
-  }
+  /* The image buttons are not synced from here. This runs once per CARD, with
+     state holding whichever page is being drawn, so it enabled them off page
+     1's picture whatever slide was selected. renderPoster() syncs them after
+     the loop instead — see syncImageAIUI(). */
 }
 
 /**
@@ -4900,6 +5030,19 @@ function storyHeadingText() {
   return (state.storyHeading || "").replace(/\s+/g, " ").trim();
 }
 
+/* How a story heading is set: "white" on the photo (bracketed words in the
+   accent), "blue" on the poster title's boxes, or "blue-text" with the words
+   themselves in the brand blue. */
+const STORY_HEADING_STYLES = ["white", "blue", "blue-text"];
+function storyHeadingStyleOr(value) {
+  return STORY_HEADING_STYLES.includes(value) ? value : "white";
+}
+
+/* The site's blue — logo, default accent, Swipe badge. Fixed rather than the
+   post's accent, so "Blue text" stays the brand colour whatever the accent
+   swatch is set to. */
+const BRAND_BLUE = "#3979FF";
+
 function storyBodyText() {
   return (state.storyBody || "").trim();
 }
@@ -4967,6 +5110,50 @@ function drawStoryHeading(lines, left, top, fontSize, lineHeight, s) {
   ctx.save();
   ctx.font = `700 ${Math.round(fontSize)}px 'Roboto Serif', 'Poppins', serif`;
   ctx.textBaseline = "top";
+  const space = ctx.measureText(" ").width;
+
+  /* "blue" puts the whole heading on the poster title's boxes, white on the
+     accent, for a slide that should read like the poster. Each run of words
+     sharing a tone gets one box per line; {braces} still pick the second
+     accent. */
+  if (state.storyHeadingStyle === "blue") {
+    const box = highlightBoxMetrics(fontSize, lineHeight);
+    lines.forEach((line, row) => {
+      const y = top + row * lineHeight;
+      const runs = [];
+      let cursor = left;
+      for (const word of line) {
+        const w = ctx.measureText(word.text).width;
+        const tone = word.tone || "accent";
+        const last = runs[runs.length - 1];
+        if (last && last.tone === tone) last.w = cursor + w - last.x;
+        else runs.push({ x: cursor, w, tone });
+        cursor += w + space;
+      }
+      for (const run of runs) {
+        ctx.fillStyle = highlightColor(run.tone);
+        ctx.beginPath();
+        ctx.roundRect(run.x - box.padX, y + box.top, run.w + box.padX * 2, box.height, box.radius);
+        ctx.fill();
+      }
+    });
+
+    // The poster's lighter text shadow — the heavy photo shadow below
+    // muddies a solid box.
+    ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+    ctx.shadowBlur = 22 * s;
+    ctx.shadowOffsetY = 8 * s;
+    ctx.fillStyle = "#ffffff";
+    lines.forEach((line, row) => {
+      let cursor = left;
+      for (const word of line) {
+        ctx.fillText(word.text, cursor, top + row * lineHeight);
+        cursor += ctx.measureText(word.text).width + space;
+      }
+    });
+    ctx.restore();
+    return top + lines.length * lineHeight;
+  }
 
   /* The shadow does the work the block used to: text on a photograph needs
      something to lift it off whatever happens to be behind it. */
@@ -4974,7 +5161,9 @@ function drawStoryHeading(lines, left, top, fontSize, lineHeight, s) {
   ctx.shadowBlur = 14 * s;
   ctx.shadowOffsetY = 4 * s;
 
-  const space = ctx.measureText(" ").width;
+  // "blue-text": every word in the brand blue; {braces} keep the second accent.
+  const blueText = state.storyHeadingStyle === "blue-text";
+
   lines.forEach((line, row) => {
     let cursor = left;
     const y = top + row * lineHeight;
@@ -4986,7 +5175,8 @@ function drawStoryHeading(lines, left, top, fontSize, lineHeight, s) {
          sentence across a photograph with nothing marking it as a kicker.
          Plain is now plain, and the accent stays available for the words
          somebody actually chooses to mark. */
-      ctx.fillStyle = word.marked ? highlightColor(word.tone) : "#ffffff";
+      if (blueText) ctx.fillStyle = word.tone === "accentAlt" ? highlightColor(word.tone) : BRAND_BLUE;
+      else ctx.fillStyle = word.marked ? highlightColor(word.tone) : "#ffffff";
       ctx.fillText(word.text, cursor, y);
       cursor += ctx.measureText(word.text).width + space;
     }
@@ -5063,6 +5253,10 @@ function drawStoryScreen() {
   });
 
   drawFixedLogos();
+  // A white heading starts on the column edge, so the badge does too; a blue
+  // one's boxes start a box-pad further left, and the badge lines up with them.
+  const blueHeading = state.storyHeadingStyle === "blue" && headingLines.length;
+  drawTagAbove(top, blueHeading && DRAWN_TAGS[state.tag]?.flush ? highlightPadX(headingSize) : 0);
 
   let y = top;
   if (headingLines.length) {
@@ -7150,7 +7344,17 @@ function drawLogoAt(img, x, y, w, h) {
   ctx.restore();
 }
 
+// Tag is anchored to the dynamic headline top, so it always sits just
+// above the headline regardless of how many lines the headline wrapped to.
 function drawTag() {
+  const L = getLayout();
+  const headlineTop = state._render?.top ?? (canvas.height - L.headline.bottomPadding - 200);
+  drawTagAbove(headlineTop, DRAWN_TAGS[state.tag]?.flush ? headlineLeadInset() : 0);
+}
+
+/* The selected tag, just above copy that starts at `copyTop`. `inset` moves
+   it left of the text column, to line up with a highlight box there. */
+function drawTagAbove(copyTop, inset) {
   if (state.tag === "none") return;
 
   const drawn = DRAWN_TAGS[state.tag];
@@ -7158,14 +7362,14 @@ function drawTag() {
   if (!drawn && !tagImg) return;
 
   const drawW = drawn ? measureDrawnTag(drawn) : (tagImg.naturalWidth || tagImg.width);
-  const drawH = drawn ? TAG_BAR_HEIGHT          : (tagImg.naturalHeight || tagImg.height);
+  const drawH = drawn ? (drawn.chip ? TAG_CHIP_HEIGHT : TAG_BAR_HEIGHT)
+                      : (tagImg.naturalHeight || tagImg.height);
 
-  // Tag is anchored to the dynamic headline top, so it always sits just
-  // above the headline regardless of how many lines the headline wrapped to.
   const L = getLayout();
-  const tagX = L.tag.x;
-  const headlineTop = state._render?.top ?? (canvas.height - L.headline.bottomPadding - 200);
-  const tagY = headlineTop - drawH - L.tag.gapAboveHeadline;
+  const tagX = L.tag.x - inset;
+  // Whole pixels: the copy's top is often fractional, and a badge on a
+  // half pixel smears its edges and label across two rows.
+  const tagY = Math.round(copyTop - drawH - L.tag.gapAboveHeadline);
 
   if (drawn) {
     drawTagBadge(drawn, tagX, tagY, drawW, drawH);
@@ -7180,11 +7384,72 @@ function drawTag() {
   ctx.restore();
 }
 
+/* Side padding of a headline highlight box at a given font size — the box
+   starts this far left of the first highlighted glyph. */
+function highlightPadX(fontSize) {
+  return Math.max(8, Math.round(fontSize * 0.16));
+}
+
+/* Size of a highlight box for a line set in the CURRENT ctx.font, as offsets
+   from the line's top-baseline y. Shared by the poster headline and the
+   story heading's blue style, so the two boxes match.
+
+   Where the ink actually sits. The serif face has a tall ascent, so its
+   glyphs land well below the em-box top — a box sized from the font size
+   alone rode high and cut the letters. Measured with textBaseline "top", so
+   the numbers are offsets from y (the top line), not from the alphabetic
+   baseline. Every box is placed from the same measurements and has the same
+   height, so the gap between one line's box and the next is identical on
+   every line.
+
+   The box spans the tallest ascender (b, d, l — they rise above the caps) to
+   the lowest descender (g, p, y), plus equal padding above and below, so no
+   letter touches an edge. The padding is whatever the line height leaves
+   after a small fixed gap between boxes, capped so a loosely spaced headline
+   doesn't get oversized boxes. */
+function highlightBoxMetrics(fontSize, lineHeight) {
+  ctx.save();
+  ctx.textBaseline = "top";
+  const inkTop    = -ctx.measureText("Hbdfhkl").actualBoundingBoxAscent;
+  const inkBottom = ctx.measureText("gjpqy").actualBoundingBoxDescent;
+  ctx.restore();
+  const inkHeight = inkBottom - inkTop;
+  const lineGap   = Math.max(5, Math.round(fontSize * 0.08) + 2);
+  const padY      = Math.max(0, Math.min(
+    Math.round(fontSize * 0.14),
+    (lineHeight - lineGap - inkHeight) / 2,
+  ));
+  return {
+    padX: highlightPadX(fontSize),                         // horizontal breathing room
+    radius: Math.max(4, Math.round(fontSize * 4 / 18)),    // Figma: 4px at 18px
+    top: inkTop - padY,
+    height: inkHeight + padY * 2,
+  };
+}
+
+/* How far left of L.headline.x the headline visibly starts: the highlight
+   box's padding when the first line opens on a highlighted word, else 0. */
+function headlineLeadInset() {
+  const { layout, fontSize } = state._render || computeHeadlineLayoutAndTop();
+  const first = layout.lines[0] || "";
+  let open = false;
+  for (const rawWord of first.split(" ")) {
+    if (HIGHLIGHT_OPEN_CHAR.test(rawWord)) open = true;
+    if (rawWord.replace(HIGHLIGHT_ANY_CHARS_GLOBAL, "").length) break;
+    if (HIGHLIGHT_CLOSE_CHAR.test(rawWord)) open = false;
+  }
+  return open ? highlightPadX(fontSize) : 0;
+}
+
 function measureDrawnTag(tag) {
   ctx.save();
-  ctx.font = TAG_FONT;
+  ctx.font = tag.chip ? TAG_CHIP_FONT : TAG_FONT;
   const textW = ctx.measureText(tag.label).width;
   ctx.restore();
+  if (tag.chip) {
+    const iconW = tag.icon ? TAG_CHIP_ICON_BOX + TAG_CHIP_ICON_GAP : 0;
+    return Math.round(TAG_CHIP_PAD_X * 2 + iconW + textW);
+  }
   const iconW = tag.icon ? TAG_ICON_BOX + TAG_ICON_GAP : 0;
   return Math.round(TAG_PAD_X * 2 + iconW + textW);
 }
@@ -7192,25 +7457,103 @@ function measureDrawnTag(tag) {
 function drawTagBadge(tag, x, y, w, h) {
   // Only the bar carries the drop shadow — the SVG tags shadow the whole
   // image once, so shadowing the label too would read as a double halo.
+  // The chip takes a tighter, offset shadow: the wide 12px glow haloed its
+  // rounded edge and made the whole badge read soft.
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,0.3)";
-  ctx.shadowBlur = 12;
+  ctx.shadowBlur = tag.chip ? 6 : 12;
+  ctx.shadowOffsetY = tag.chip ? 2 : 0;
   ctx.fillStyle = tag.bg;
-  ctx.fillRect(x, y, w, h);
+  if (tag.chip && ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, TAG_CHIP_RADIUS);
+    ctx.fill();
+  } else {
+    ctx.fillRect(x, y, w, h);
+  }
   ctx.restore();
 
   ctx.save();
   ctx.fillStyle = "#FFFFFF";
-  let cursor = x + TAG_PAD_X;
+  let cursor = x + (tag.chip ? TAG_CHIP_PAD_X : TAG_PAD_X);
   if (tag.icon) {
-    drawPlayGlyph(cursor, y + (h - TAG_ICON_BOX) / 2, TAG_ICON_BOX);
-    cursor += TAG_ICON_BOX + TAG_ICON_GAP;
+    const box = tag.chip ? TAG_CHIP_ICON_BOX : TAG_ICON_BOX;
+    const gap = tag.chip ? TAG_CHIP_ICON_GAP : TAG_ICON_GAP;
+    const glyph = tag.icon === "clock" ? drawClockGlyph : drawPlayGlyph;
+    glyph(cursor, y + (h - box) / 2, box);
+    cursor += box + gap;
   }
-  ctx.font = TAG_FONT;
+  ctx.font = tag.chip ? TAG_CHIP_FONT : TAG_FONT;
   ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  // +1px optical nudge — Poppins' middle baseline sits slightly high in the bar.
-  ctx.fillText(tag.label, cursor, y + h / 2 + 1);
+  if (tag.chip) {
+    // Centre the caps' ink rather than the em box — how high Poppins'
+    // "middle" sits changes with size and weight, so a fixed nudge left the
+    // 27px bold label 1.5px high. Rounded so the letters land on whole pixels.
+    // Baseline first: measureText reports ascent from the CURRENT baseline,
+    // and the story slide leaves it on "top".
+    ctx.textBaseline = "alphabetic";
+    const m = ctx.measureText(tag.label);
+    const baseline = y + (h + m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+    ctx.fillText(tag.label, cursor, Math.round(baseline));
+  } else {
+    ctx.textBaseline = "middle";
+    // +1px optical nudge — Poppins' middle baseline sits slightly high in the bar.
+    ctx.fillText(tag.label, cursor, y + h / 2 + 1);
+  }
+  ctx.restore();
+}
+
+/* The 🕙 clock as Windows draws it — grey bezel, pale face, slate hour hand
+   on 10, pink minute hand on 12 — sized to fit a `box`×`box` square at
+   (x, y). Painted by hand rather than with fillText("🕙") because every OS
+   ships a different emoji, and the export must look the same everywhere. */
+function drawClockGlyph(x, y, box) {
+  const cx = x + box / 2;
+  const cy = y + box / 2;
+  const r = box / 2;
+  const face = r * 0.76;
+
+  ctx.save();
+
+  // Bezel: lit from the top left, with a soft drop shadow off the badge.
+  const bezel = ctx.createLinearGradient(x, y, x + box, y + box);
+  bezel.addColorStop(0, "#E4E4EA");
+  bezel.addColorStop(1, "#8C8C96");
+  ctx.shadowColor = "rgba(0,0,0,0.28)";
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 1;
+  ctx.fillStyle = bezel;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+
+  // Face: a shade darker at the rim so it reads as set into the bezel.
+  const dial = ctx.createRadialGradient(cx - face * 0.3, cy - face * 0.3, 0, cx, cy, face);
+  dial.addColorStop(0, "#FFFFFF");
+  dial.addColorStop(1, "#DCDCE3");
+  ctx.fillStyle = dial;
+  ctx.beginPath();
+  ctx.arc(cx, cy, face, 0, Math.PI * 2);
+  ctx.fill();
+
+  const hand = (angleDeg, len, width, color) => {
+    const a = (angleDeg - 90) * Math.PI / 180;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len);
+    ctx.stroke();
+  };
+  hand(300, face * 0.5,  box * 0.1,  "#4A4A5C");   // hour, on 10
+  hand(0,   face * 0.72, box * 0.08, "#E8336A");   // minute, on 12
+
+  ctx.fillStyle = "#8C8C96";
+  ctx.beginPath();
+  ctx.arc(cx, cy, box * 0.08, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -7313,42 +7656,13 @@ function drawHeadline() {
     const fontMatch = layout.font.match(/(\d+(?:\.\d+)?)px/);
     const fontSize  = fontMatch ? parseFloat(fontMatch[1]) : Math.round(layout.lineHeight / 1.22);
 
-    const PAD_X        = Math.max(8, Math.round(fontSize * 0.16));  // horizontal breathing room
-    const CORNER_RAD   = Math.max(4, Math.round(fontSize * 4 / 18)); // Figma: 4px at 18px
-
-    // Where the ink actually sits. The serif face has a tall ascent, so its
-    // glyphs land well below the em-box top — a box sized from the font size
-    // alone rode high and cut the letters. With textBaseline "top",
-    // measurements are offsets from y (the top line), not from the alphabetic
-    // baseline. Every box is placed from the same measurements and has the
-    // same height, so the gap between one line's box and the next is
-    // identical on every line.
-    //
-    // The box spans the tallest ascender (b, d, l — they rise above the caps)
-    // to the lowest descender (g, p, y), plus equal padding above and below,
-    // so no letter touches an edge. The padding is whatever the line height
-    // leaves after a small fixed gap between boxes, capped so a loosely
-    // spaced headline doesn't get oversized boxes.
-    const inkTop    = -ctx.measureText("Hbdfhkl").actualBoundingBoxAscent;
-    const inkBottom = ctx.measureText("gjpqy").actualBoundingBoxDescent;
-    const inkHeight = inkBottom - inkTop;
-    const LINE_GAP  = Math.max(5, Math.round(fontSize * 0.08) + 2);
-    const PAD_Y     = Math.max(0, Math.min(
-      Math.round(fontSize * 0.14),
-      (layout.lineHeight - LINE_GAP - inkHeight) / 2,
-    ));
-    const drawH  = inkHeight + PAD_Y * 2;
-    const boxTop = y + inkTop - PAD_Y;
+    const box = highlightBoxMetrics(fontSize, layout.lineHeight);
 
     segments.forEach(seg => {
       // Per segment: two runs on one line can now be two colours.
       ctx.fillStyle = highlightColor(seg.tone);
-      const drawX = seg.x - PAD_X;
-      const widthToFill = seg.w + PAD_X * 2;
-      const drawY = boxTop;
-
       ctx.beginPath();
-      ctx.roundRect(drawX, drawY, widthToFill, drawH, CORNER_RAD);
+      ctx.roundRect(seg.x - box.padX, y + box.top, seg.w + box.padX * 2, box.height, box.radius);
       ctx.fill();
     });
   });
@@ -9589,29 +9903,8 @@ if (copyAllBtn) {
 
 const aiEnhanceBtn    = document.getElementById("ai-enhance-btn");
 const aiReframeBtn    = document.getElementById("ai-reframe-btn");
-/* Reframe is a paid full redraw, so each pix (page) gets two. Counted on
-   success only; the server holds the same cap per user and page. */
-const REFRAME_LIMIT_PER_PIX = 2;
-const reframeUses = new Map();
-function reframesLeft(page) {
-  if (!page) return 0;
-  return Math.max(0, REFRAME_LIMIT_PER_PIX - (reframeUses.get(page.id) || 0));
-}
-function syncReframeUI() {
-  const btn = document.getElementById("ai-reframe-btn");
-  if (!btn || btn.classList.contains("working")) return;
-  const left = reframesLeft(activePage());
-  const label = btn.querySelector(".reframe-label");
-  if (label) label.textContent = left > 0 ? `Reframe (${left} left)` : "Reframe (limit reached)";
-  btn.disabled = !state.mainImage || left <= 0;
-}
-const aiEnhanceStatus = document.getElementById("ai-enhance-status");
-
-function setEnhanceStatus(msg, kind) {
-  if (!aiEnhanceStatus) return;
-  aiEnhanceStatus.className = "status-text" + (kind ? ` ${kind}` : "");
-  aiEnhanceStatus.textContent = msg || "";
-}
+// The Reframe cap, the job in flight and the status line are per page — see
+// imageJobs and syncImageAIUI() beside the undo slot.
 
 /* The admin's AI Usage screen counts every press of the image buttons. The
    server records each press that reaches it — with the cost and the picture
@@ -10430,12 +10723,15 @@ function composeExpandResult(resultImg, srcCanvas, baseFrame, place, scale = 1, 
 }
 
 async function runImageAI(modeOverride) {
-  const btn = modeOverride === "reframe" ? aiReframeBtn : aiEnhanceBtn;
   const requestedMode = modeOverride || enhanceModeSel?.value || "restore";
   const img = state.mainImage;
-  if (!img || !btn) return;
   // Whose picture this is. Read before the first await — see the commit below.
   const enhanceOwner = activePage();
+  // One job per page; another slide can start its own meanwhile.
+  if (!img || imageJobFor(enhanceOwner)) return;
+  const jobKind = requestedMode === "reframe" ? "reframe" : "ai_upscale";
+  // Every message goes to the page pressed on, whichever one is on screen.
+  const say = (msg, kind) => setEnhanceStatus(msg, kind, enhanceOwner);
   /* For the AI Usage audit: the post this press was made on, read now — the
      call takes 30-90 seconds and the reviewer may have opened another post by
      the time it ends. `sentPaidCall` marks the point after which the server
@@ -10447,8 +10743,8 @@ async function runImageAI(modeOverride) {
   });
   let sentPaidCall = false;
   if (requestedMode === "reframe" && reframesLeft(enhanceOwner) <= 0) {
-    setEnhanceStatus(`Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.`);
-    reportPress("limit", `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per pix.`);
+    say(`Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`);
+    reportPress("limit", `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`);
     return;
   }
   /* Before anything is spent. Taken here rather than beside the commit so the
@@ -10458,9 +10754,9 @@ async function runImageAI(modeOverride) {
      image. */
   rememberImageBeforeAI(enhanceOwner, img);
 
-  btn.disabled = true;
-  btn.classList.add("working");
-  setEnhanceStatus(ENHANCE_WORKING[requestedMode] || ENHANCE_WORKING.auto);
+  imageJobs.set(enhanceOwner.id, jobKind);
+  say(ENHANCE_WORKING[requestedMode] || ENHANCE_WORKING.auto);
+  syncImageAIUI();
 
   try {
     // Snapshot the current background to a temp canvas, capped at 1536 on
@@ -10535,22 +10831,20 @@ async function runImageAI(modeOverride) {
         commitFieldToPage(enhanceOwner, "filterContrast", auto.contrast);
         commitFieldToPage(enhanceOwner, "filterSaturation", auto.saturation);
         renderPoster();
-        setEnhanceStatus(
+        say(
           `Adjusted it here instead — ${toneSummary}. ` +
           `At ${rawW}×${rawH} it is already larger than the AI can return ` +
           `(${MODEL_CEILING_PX}px), so the call would have shrunk it. No credits used.`,
           "success",
         );
       } else {
-        setEnhanceStatus(
+        say(
           `This photograph does not need it. ${rawW}×${rawH} is larger than the AI can ` +
           `return (${MODEL_CEILING_PX}px), and its exposure and contrast already measure fine. ` +
           `Nothing changed, no credits used.`,
           "success",
         );
       }
-      btn.disabled = false;
-      btn.classList.remove("working");
       return;
     }
 
@@ -10725,7 +11019,7 @@ async function runImageAI(modeOverride) {
       const target = RATIO_ASPECTS[state.aspectRatio] || 9 / 16;
       const sameShape = Math.abs(Math.log((rawW / rawH) / target)) < 0.06;
       if (sameShape && longEdge >= MODEL_CEILING_PX) {
-        setEnhanceStatus(
+        say(
           `This photograph is already ${state.aspectRatio || "9:16"} at ${rawW}×${rawH} — larger than the AI ` +
           `can return (${MODEL_CEILING_PX}px), so a redraw could only shrink it. ` +
           `${toneHelps ? `Adjusted it here instead — ${toneSummary}. ` : ""}No credits used.`,
@@ -10733,13 +11027,11 @@ async function runImageAI(modeOverride) {
         );
         if (toneHelps) renderPoster();
         reportPress("skipped", `Already ${state.aspectRatio || "9:16"} at ${rawW}×${rawH} — a redraw could only shrink it.`);
-        btn.disabled = false;
-        btn.classList.remove("working");
         return;
       }
     }
 
-    setEnhanceStatus(place
+    say(place
       ? `Expanding — drawing the scene outward from the photo${plan.reason ? ` (${plan.reason})` : ""} (30–90s)…`
       : plan.mode === "reframe"
         ? ENHANCE_WORKING.reframe
@@ -10814,7 +11106,8 @@ async function runImageAI(modeOverride) {
     if (!resp.ok) throw enhanceError(data, resp.status);
     if (!data.image) throw new Error("No image returned.");
     if (requestedMode === "reframe" && enhanceOwner) {
-      reframeUses.set(enhanceOwner.id, (reframeUses.get(enhanceOwner.id) || 0) + 1);
+      const key = reframeKey(enhanceOwner, pixIdAtPress);
+      reframeUses.set(key, (reframeUses.get(key) || 0) + 1);
     }
 
     /* A second round trip, and a cheap one: the answer above carried an
@@ -10975,7 +11268,7 @@ async function runImageAI(modeOverride) {
     const billed = data.cached
       ? " (from cache, no charge)"
       : (data.cost ? ` — $${data.cost.usd.toFixed(3)}` : "");
-    setEnhanceStatus(
+    say(
       `✓ ${label.done}${fitted} via ${engineLabel}${billed}${why}. Re-pick a stock image to undo.`,
       "success",
     );
@@ -10989,21 +11282,19 @@ async function runImageAI(modeOverride) {
        that is not there. It is also the one refusal they can act on — by
        publishing the photograph as it is. */
     if (err.moderated) {
-      setEnhanceStatus(err.message, "success");
+      say(err.message, "success");
     } else {
       // Before the plan lands there is no resolved mode, so the failure is
       // named after what was asked for. On auto that is neither job yet.
       const failed = ENHANCE_LABELS[requestedMode]?.failed || "Enhance failed";
-      setEnhanceStatus(`${failed}: ${err.message}`, "error");
+      say(`${failed}: ${err.message}`, "error");
     }
   } finally {
-    btn.classList.remove("working");
-    btn.disabled = !state.mainImage;
-    syncReframeUI();
-    // Re-read after "working" comes off: syncImageUndoUI() greys the undo out
-    // for the duration of a call, and nothing else would put it back on the
-    // failure path.
-    syncImageUndoUI();
+    imageJobs.delete(enhanceOwner.id);
+    // Re-read once the job is off the page: the buttons and the undo are
+    // greyed out for the duration of a call, and nothing else would put them
+    // back on the failure path.
+    syncImageAIUI();
   }
 }
 
@@ -11014,15 +11305,16 @@ if (aiReframeBtn) aiReframeBtn.addEventListener("click", () => runImageAI("refra
    picture at its native size and puts the enlarged copy back on the same
    page, keeping the writer's zoom and pan. Undo AI Enhance reverts it too. */
 async function runFreeUpscale() {
-  const btn = document.getElementById("free-upscale-btn");
   const img = state.mainImage;
-  if (!btn || !img) return;
   const owner = activePage();
+  // One job per page; another slide can start its own meanwhile.
+  if (!img || imageJobFor(owner)) return;
+  const say = (msg, kind) => setEnhanceStatus(msg, kind, owner);
   const pixIdAtPress = state.pixId || "";
   rememberImageBeforeAI(owner, img);
-  btn.disabled = true;
-  btn.classList.add("working");
-  setEnhanceStatus("Free Upscale — restoring detail on our own server. This can take up to 2 minutes, no OpenAI cost…");
+  imageJobs.set(owner.id, "free_upscale");
+  say("Free Upscale — restoring detail on our own server. This can take up to 2 minutes, no OpenAI cost…");
+  syncImageAIUI();
   try {
     const c = document.createElement("canvas");
     c.width = img.naturalWidth || img.width;
@@ -11050,25 +11342,26 @@ async function runFreeUpscale() {
     noteAIImage(owner, out);
     await ensureImageFocalPoint(out);
     commitFieldToPage(owner, "mainImage", out);
+    // Repaint now: the slide may not be the one on screen, and its card in
+    // the rail would otherwise keep the old picture until something else drew.
+    renderPoster();
     const how = data.ai ? "AI detail restore" : "enlarge + sharpen";
     const grew = out.width > c.width;
-    setEnhanceStatus(grew
+    say(grew
       ? `Free Upscale done (${how}) — ${c.width}x${c.height} → ${out.width}x${out.height}, no OpenAI cost.`
       : `Already high resolution (${c.width}x${c.height}) — sharpened only, no OpenAI cost.`);
   } catch (err) {
-    setEnhanceStatus(err.message || "Free Upscale failed.");
+    say(err.message || "Free Upscale failed.");
   } finally {
-    btn.classList.remove("working");
-    btn.disabled = !state.mainImage;
-    syncImageUndoUI();
+    imageJobs.delete(owner.id);
+    syncImageAIUI();
   }
 }
 document.getElementById("free-upscale-btn")?.addEventListener("click", () => runFreeUpscale());
-syncReframeUI();
 
 const imageUndoBtn = document.getElementById("image-undo-btn");
 if (imageUndoBtn) imageUndoBtn.addEventListener("click", () => revertImageToOriginal());
-syncImageUndoUI();
+syncImageAIUI();
 
 /* ── Theme toggle (dark default; persisted in localStorage) ── */
 (function initThemeToggle() {

@@ -4741,6 +4741,39 @@ textarea:focus {
   width: 100%;
 }
 
+/* A slide with an AI Upscale, Free Upscale or Reframe still running. Each
+   page runs its own, so the writer can move on to the next story — this is
+   how the one left behind says it is not finished. Text comes from
+   data-ai-busy, set by syncImageAIUI() in app.js. */
+.preview-card.is-ai-busy .canvas-container {
+  position: relative;
+}
+
+.preview-card.is-ai-busy .canvas-container::after {
+  content: attr(data-ai-busy);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 5px 12px;
+  border-radius: 100px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: ai-busy-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ai-busy-pulse {
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-card.is-ai-busy .canvas-container::after { animation: none; }
+}
+
 /* ── Grip ──
    Only the grip starts a reorder: the video card claims pointer drags for
    reframing, and a focusable grip is the whole keyboard path (← →). */
