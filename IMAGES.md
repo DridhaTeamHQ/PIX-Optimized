@@ -223,17 +223,21 @@ works. Covered by `test/enhance-result.mjs`.
 `usage` block off its own response, prices it, and reports it three ways:
 
 ```
-console  ✓ AI restore done in 41200ms (gpt-image-1.5, 1536x1024, quality=medium) — $0.0631 (in 1568 img + 214 txt, out 1024)
-payload  "cost": { "textInTokens": 214, "imageInTokens": 1568, "outputTokens": 1024, "usd": 0.0631 }
-UI       ✓ Restored and upscaled via gpt-image-1.5 — $0.063
+console  ✓ AI restore done in 41200ms (gpt-image-1.5, 1536x1024, quality=medium) — $0.0464 (in 1568 img + 214 txt, out 1024)
+payload  "cost": { "textInTokens": 214, "imageInTokens": 1568, "outputTokens": 1024, "usd": 0.0464 }
+UI       ✓ Restored and upscaled via gpt-image-1.5 — $0.046
 ```
 
 Read that, not the estimates below. A table in a document cannot know what
 OpenAI charged today, and this one has been wrong before: it previously quoted
 1024x1024 prices for a route that never asks for a square, understating `low`
 and `medium` by about half. Rates are overridable via `OPENAI_RATE_TEXT_IN`,
-`OPENAI_RATE_IMAGE_IN` and `OPENAI_RATE_IMAGE_OUT` (per million tokens); the
-authoritative total is always the OpenAI usage dashboard.
+`OPENAI_RATE_IMAGE_IN` and `OPENAI_RATE_IMAGE_OUT` (per million tokens), and
+default to OpenAI's published gpt-image-1.5 rates: **$5 text in, $8 image in,
+$32 image out** (checked 2026-10-13). Until then they defaulted to $10 and $40,
+gpt-image-1's rates, so every cost recorded before that date — in the log, the
+status line and the AI Usage page — reads about 20% higher than OpenAI billed.
+The authoritative total is always the OpenAI usage dashboard.
 
 Rough expectations, output tokens only, at the portrait/landscape shapes this
 route asks for:
@@ -426,10 +430,12 @@ being fixed.
 `DISABLE_GPT_IMAGE=true` switches the route off entirely and returns 503. It no
 longer diverts to anything, because there is nothing left to divert to.
 
-### 2.12 HD Upscale — past 1536px at AI Upscale's price
+### 2.12 HD Upscale — the paid upscale button
 
-`POST /api/hd-upscale` — reviewer only, the **HD Upscale** button. gpt-image-1.5 cannot
-return more than 1536px (§2.4), so the resolution comes from a second, free step:
+`POST /api/hd-upscale` — reviewer only, the **HD Upscale** button. It **replaced the AI
+Upscale button** (2026-10-13): that button ran the same restore and stopped at 1536px. The
+plan/edit route in §2.1–2.11 still serves Reframe, and its Job selector is hidden. gpt-image-1.5
+cannot return more than 1536px (§2.4), so the resolution comes from a second, free step:
 
 1. **Restore** — exactly what AI Upscale runs: `runEnhanceEdit` with `mode: "restore"`,
    gpt-image-1.5 at `IMAGE_QUALITY` (medium), the same prompt, result cache, hourly cap
@@ -442,6 +448,18 @@ return more than 1536px (§2.4), so the resolution comes from a second, free ste
 
 Step 2 enlarges and sharpens what step 1 drew; it does not invent new detail. A source
 already at about 3072px is not sent (`skipped`, no charge).
+
+On the paid path the browser uploads what AI Upscale did: cropped to the nearest shape
+gpt-image returns (`nearestModelShape`, or the model invents the difference) and capped at
+`RESTORE_UPLOAD_PX` (1024), since the upload is billed by its size.
+
+**Small photos are not refused.** Under 700px on the long edge the result carries a note
+that faces may not match. That is a real limit, not a cautious one: a 252×168 thumbnail of a
+couple went through AI Upscale and then Reframe and came back as two different people in
+the same clothes, because a 30px face gives the model nothing to keep. The reviewer decides.
+
+**Reframe redraws from the writer's original** whenever an earlier AI result is on the page
+(`imageUndoEntry`), so two redraws never stack on the same faces.
 
 gpt-image-2, which draws up to 3824px natively, was tried for this button and measured at
 **$0.48** a press (768×512 → 3520×2336, quality high) — about ten times this route — and

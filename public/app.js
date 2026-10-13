@@ -10947,7 +10947,7 @@ function composeExpandResult(resultImg, srcCanvas, baseFrame, place, scale = 1, 
 
 async function runImageAI(modeOverride) {
   const requestedMode = modeOverride || enhanceModeSel?.value || "restore";
-  const img = state.mainImage;
+  let img = state.mainImage;
   // Whose picture this is. Read before the first await — see the commit below.
   const enhanceOwner = activePage();
   // One job per page; another slide can start its own meanwhile.
@@ -10969,6 +10969,16 @@ async function runImageAI(modeOverride) {
     say(`Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`);
     reportPress("limit", `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`);
     return;
+  }
+  /* Reframe redraws from the writer's own photo whenever an earlier AI result
+     is on the page. A redraw of a redraw drifts further from the real faces
+     each time: a 252px thumbnail upscaled and then reframed came back as two
+     different people. The earlier result is not lost — Undo still reaches the
+     original, and the original is what the reviewer would have wanted
+     reframed anyway. */
+  if (requestedMode === "reframe") {
+    const entry = imageUndoEntry(enhanceOwner);
+    if (entry && entry.image !== img) img = entry.image;
   }
   /* Before anything is spent. Taken here rather than beside the commit so the
      slot exists even if the call fails halfway — and taken from the same page
@@ -11492,7 +11502,8 @@ async function runImageAI(modeOverride) {
       ? " (from cache, no charge)"
       : (data.cost ? ` — $${data.cost.usd.toFixed(3)}` : "");
     say(
-      `✓ ${label.done}${fitted} via ${engineLabel}${billed}${why}. Re-pick a stock image to undo.`,
+      `✓ ${label.done}${fitted} via ${engineLabel}${billed}${why}. Re-pick a stock image to undo.` +
+      smallPhotoNote(rawW, rawH),
       "success",
     );
   } catch (err) {
@@ -11582,24 +11593,54 @@ async function runFreeUpscale() {
 }
 document.getElementById("free-upscale-btn")?.addEventListener("click", () => runFreeUpscale());
 
-/* HD Upscale, through /api/hd-upscale: AI Upscale's gpt-image-1.5 restore
-   (~$0.12, skipped for a source already 1536px or larger), then a free 2x
-   lanczos + sharpen on our server to ~3072px. Same page, same zoom and pan,
-   and Undo AI Enhance reverts it like the others. */
+/* HD Upscale, through /api/hd-upscale — the paid upscale button (it replaced
+   AI Upscale). The server runs the gpt-image-1.5 restore (~$0.12) when the
+   photo is under MODEL_CEILING_PX, then a free 2x lanczos + sharpen to
+   ~3072px. Same page, same zoom and pan, and Undo AI Enhance reverts it. */
+
+/* A photo this small has faces only a few dozen pixels wide, and the AI
+   invents them rather than restoring them. Nothing is refused for it — the
+   reviewer decides — but the result says so, so a face that no longer
+   matches is not a surprise. */
+const AI_SMALL_PHOTO_EDGE = 700;
+function smallPhotoNote(w, h) {
+  return Math.max(w, h) < AI_SMALL_PHOTO_EDGE
+    ? ` Small photo (${w}x${h}): faces may not match the original — a larger copy gives a better result.`
+    : "";
+}
+
 async function runHdUpscale() {
   const img = state.mainImage;
   const owner = activePage();
   if (!img || imageJobFor(owner)) return;
   const say = (msg, kind) => setEnhanceStatus(msg, kind, owner);
   const pixIdAtPress = state.pixId || "";
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const longEdge = Math.max(w, h);
+  // The same test the server makes: below the model's ceiling the restore runs.
+  const aiPath = longEdge < MODEL_CEILING_PX;
   imageJobs.set(owner.id, "hd_upscale");
-  say("HD Upscale — restoring with ChatGPT (gpt-image-1.5), then enlarging to HD. This can take up to a minute…");
+  say(aiPath
+    ? "HD Upscale — restoring with ChatGPT (gpt-image-1.5), then enlarging to HD. This can take up to a minute…"
+    : "HD Upscale — already larger than the AI returns, so enlarging and sharpening only (free)…");
   syncImageAIUI();
   try {
+    /* On the AI path the upload matches AI Upscale's: cropped to the nearest
+       shape gpt-image can return (or it invents the difference — the extra
+       sky), and capped at RESTORE_UPLOAD_PX, because the upload is billed by
+       its size. Otherwise the photo goes whole, for the free enlarge alone. */
+    let sx = 0, sy = 0, sw = w, sh = h, scale = 1;
+    if (aiPath) {
+      const target = nearestModelShape(w / h);
+      if (w / h > target) { sw = h * target; sx = (w - sw) / 2; }
+      else if (w / h < target) { sh = w / target; sy = (h - sh) / 2; }
+      scale = Math.min(1, RESTORE_UPLOAD_PX / Math.max(sw, sh));
+    }
     const c = document.createElement("canvas");
-    c.width = img.naturalWidth || img.width;
-    c.height = img.naturalHeight || img.height;
-    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    c.width = Math.round(sw * scale);
+    c.height = Math.round(sh * scale);
+    c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
     // PNG keeps every pixel; past ~2500px it would outgrow the 12 MB upload
     // cap, and a 0.95 JPEG of a picture that large loses nothing visible.
     const big = Math.max(c.width, c.height) > 2500;
@@ -11615,7 +11656,7 @@ async function runHdUpscale() {
     const resp = await fetch("/api/hd-upscale", { method: "POST", body: form });
     const data = await resp.json().catch(() => ({}));
     if (resp.ok && data.skipped) {
-      say(`Already HD (${c.width}x${c.height}) — nothing to upscale, no charge.`, "success");
+      say(`Already HD (${w}x${h}) — nothing to upscale, no charge.`, "success");
       return;
     }
     if (!resp.ok || !data.image) {
@@ -11637,9 +11678,13 @@ async function runHdUpscale() {
       : data.cached ? " (restore from cache, no charge)"
       : (data.cost ? ` — $${data.cost.usd.toFixed(3)}` : "");
     const note = data.enlarged === false ? " The enlarge step is unavailable on this server, so this is the restore alone." : "";
-    say(`✓ HD Upscale done — ${c.width}x${c.height} → ${out.naturalWidth}x${out.naturalHeight} via ${data.engine || "gpt-image-1.5"}${billed}.${note}`, "success");
+    say(
+      `✓ HD Upscale done — ${w}x${h} → ${out.naturalWidth}x${out.naturalHeight} via ${data.engine || "gpt-image-1.5"}${billed}.${note}` +
+      (data.ai ? smallPhotoNote(w, h) : ""),
+      "success",
+    );
   } catch (err) {
-    // A safety refusal is an answer, not a fault — same as AI Upscale.
+    // A safety refusal is an answer, not a fault.
     if (err.moderated) say(err.message, "success");
     else say(`HD Upscale failed: ${err.message || "unknown error"}`, "error");
   } finally {

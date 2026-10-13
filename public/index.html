@@ -647,40 +647,10 @@
           <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
         </button>
         <div class="acc-body"><div class="acc-inner">
-          <!-- One button, and a stage that decides what it does.
-
-               There are two jobs here. Restore keeps the framing and recovers
-               detail. Expand keeps the photograph and draws outward from it:
-               the rest of a subject the photographer cropped at the chest, the
-               rest of the room, enough margin that a landscape press photo can
-               sit on a 9:16 poster without the canvas cutting the story out of
-               it.
-
-               They were briefly two buttons, on the reasoning that nothing in
-               the pixels tells a picture that wants widening from one that
-               wants sharpening. That is true of a heuristic and false of a
-               model that looks at the photograph — and one has been reading
-               every photograph in stage 1 of this route all along, describing
-               it for the edit prompt. It was never asked which job it needed.
-               It is now, in the same call that was already being paid for, so
-               the judgement costs nothing and the reviewer presses once.
-
-               Auto never expands. The planner's verdict is still read, but an
-               "expand" answer now means Fit — the whole photograph shown
-               letterboxed, by arithmetic, with nothing generated past the
-               edges. Expand was returning the photograph as a framed print
-               inside a scene the model drew around it, and the fix for that
-               (a browser-composited frame plus an alpha mask that pins the
-               original) is real but is not something to hand a reviewer who
-               pressed one button. It is reachable from the Job selector
-               below, deliberately. See "auto never expands" in server.mjs. -->
-            <button type="button" id="ai-enhance-btn" class="btn-ai" disabled>
-              <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
-              AI Upscale (paid)
-            </button>
-            <!-- HD Upscale: AI Upscale's gpt-image-1.5 restore (~$0.12), then a
-                 free 2x enlarge + sharpen on our server to ~3072px — the
-                 resolution AI Upscale alone cannot reach (it stops at 1536). -->
+            <!-- HD Upscale: the paid upscale. A gpt-image-1.5 restore (~$0.12),
+                 then a free 2x enlarge + sharpen on our server to ~3072px. It
+                 replaced the AI Upscale button, which ran the same restore and
+                 stopped at 1536px. -->
             <button type="button" id="hd-upscale-btn" class="btn-ai btn-hd-upscale" disabled
                     title="Restores the photo with ChatGPT (gpt-image-1.5, ~$0.12), then enlarges it to ~3000px for free.">
               <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
@@ -713,7 +683,9 @@
               <svg width="14" height="14" aria-hidden="true"><use href="#i-undo"/></svg>
               Undo AI Enhance
             </button>
-            <label class="field" style="margin-top:10px;">
+            <!-- The Job selector belonged to the AI Upscale button, which is
+                 gone; hidden rather than deleted because app.js reads it. -->
+            <label class="field" id="enhance-mode-field" style="margin-top:10px;" hidden>
               <span class="field-label">Job</span>
               <select id="enhance-mode">
                 <!-- Reframe is the default: one gpt-image-1.5 call at high
@@ -742,7 +714,7 @@
             <small class="helper-text" id="enhance-strength-hint" hidden>20% — raise this only if the image still looks soft.</small>
             <!-- Rewritten per job by syncEnhanceModeUI() in app.js; this is
                  the Auto text, which is what the selector defaults to. -->
-            <small class="helper-text" id="enhance-mode-hint">AI Upscale improves this photo with OpenAI. Paid, roughly $0.10 a click.</small>
+            <small class="helper-text" id="enhance-mode-hint" hidden>AI Upscale improves this photo with OpenAI. Paid, roughly $0.10 a click.</small>
             <p id="ai-enhance-status" class="status-text" role="status" aria-live="polite"></p>
           </div></div>
         </div>

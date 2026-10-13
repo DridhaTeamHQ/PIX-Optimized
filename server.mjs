@@ -5943,13 +5943,16 @@ async function runEnhanceEdit({
 
      Rates are per MILLION tokens and overridable, because they are the one
      part of this that OpenAI can change without the code noticing. The
-     defaults are the published gpt-image rates. The authoritative number is
-     always the usage dashboard; this is the per-click figure that makes the
-     dashboard total explicable. */
+     defaults are OpenAI's published gpt-image-1.5 rates (Standard tier,
+     checked 2026-10-13): $5 text in, $8 image in, $32 image out. They were
+     $10 and $40 until then — gpt-image-1's rates — which overstated every
+     press by about 20%. The authoritative number is always the usage
+     dashboard; this is the per-click figure that makes the dashboard total
+     explicable. */
   const usage = data?.usage || null;
   const RATE_TEXT_IN = Number(env("OPENAI_RATE_TEXT_IN") || 5);
-  const RATE_IMAGE_IN = Number(env("OPENAI_RATE_IMAGE_IN") || 10);
-  const RATE_IMAGE_OUT = Number(env("OPENAI_RATE_IMAGE_OUT") || 40);
+  const RATE_IMAGE_IN = Number(env("OPENAI_RATE_IMAGE_IN") || 8);
+  const RATE_IMAGE_OUT = Number(env("OPENAI_RATE_IMAGE_OUT") || 32);
   let cost = null;
   if (usage) {
     const textIn = usage.input_tokens_details?.text_tokens ?? 0;

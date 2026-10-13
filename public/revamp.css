@@ -2481,7 +2481,7 @@ body.nav-collapsed .cms-sidebar .view-tab:hover::after {
   order: 1;
 }
 
-.cms-media-strip .image-panel>.acc:has(#ai-enhance-btn) {
+.cms-media-strip .image-panel>.acc:has(#hd-upscale-btn) {
   order: 2;
 }
 
@@ -2638,7 +2638,6 @@ body.nav-collapsed .cms-sidebar .view-tab:hover::after {
 :root[data-theme="dark"] .btn-ai.btn-hd-upscale {
   background: #5b3cc4;
   color: #ffffff;
-  margin-top: 8px;
 }
 .btn-ai.btn-hd-upscale:hover:not(:disabled) {
   background: #45289f;
@@ -2699,7 +2698,7 @@ body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .
 body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel>.acc:has(#filter-presets) {
   grid-column: 1; grid-row: 4;
 }
-body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel>.acc:has(#ai-enhance-btn) {
+body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel>.acc:has(#hd-upscale-btn) {
   grid-column: 2; grid-row: 2 / span 4;
 }
 body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .image-panel>#stock-images-section {
@@ -2708,7 +2707,8 @@ body:is([data-role="qa"], [data-role="admin"]) .preview-panel .cms-media-strip .
 
 /* "Pull back" only belongs to Expand. The field carries [hidden], but a
    display:flex rule on .field was overriding it, so it showed for Upscale. */
-#expand-amount-field[hidden] {
+#expand-amount-field[hidden],
+#enhance-mode-field[hidden] {
   display: none !important;
 }
 

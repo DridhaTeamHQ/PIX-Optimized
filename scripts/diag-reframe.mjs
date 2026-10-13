@@ -72,6 +72,6 @@ const out = HERE + `diag_out_${variant}.png`;
 writeFileSync(out, Buffer.from(b64, "base64"));
 const u = data.usage || {};
 const inTok = u.input_tokens_details?.image_tokens || 0, txt = u.input_tokens_details?.text_tokens || 0, outTok = u.output_tokens || 0;
-const usd = (txt * 5 + inTok * 10 + outTok * 40) / 1e6;   // OPENAI_RATE_* defaults from server.mjs
+const usd = (txt * 5 + inTok * 8 + outTok * 32) / 1e6;   // OPENAI_RATE_* defaults from server.mjs
 console.log(`done in ${(ms / 1000).toFixed(1)}s → ${out}`);
 console.log(`usage: text ${txt}, image-in ${inTok}, out ${outTok} → ~$${usd.toFixed(3)}`);
