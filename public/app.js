@@ -1275,18 +1275,20 @@ function revertImageToOriginal() {
    is selected — syncImageAIUI() repaints it from here on every render, which
    includes every page switch. One job per page at a time, because two on the
    same picture would race to replace it; any number across pages. */
-const imageJobs = new Map();       // page id -> "ai_upscale" | "free_upscale" | "reframe"
+const imageJobs = new Map();       // page id -> "ai_upscale" | "free_upscale" | "hd_upscale" | "reframe"
 const imageJobStatus = new Map();  // page id -> { msg, kind }
 
 const IMAGE_JOB_BUTTONS = {
   ai_upscale: "ai-enhance-btn",
   free_upscale: "free-upscale-btn",
+  hd_upscale: "hd-upscale-btn",
   reframe: "ai-reframe-btn",
 };
 // What a slide in the rail says while its job runs.
 const IMAGE_JOB_BADGES = {
   ai_upscale: "AI upscaling…",
   free_upscale: "Upscaling…",
+  hd_upscale: "Upscaling to HD…",
   reframe: "Reframing…",
 };
 
@@ -9541,6 +9543,7 @@ const IMAGE_ACTION_LABELS = {
   ai_upscale: "AI Upscale",
   reframe: "Reframe",
   free_upscale: "Free Upscale",
+  hd_upscale: "HD Upscale",
   undo: "Undo",
 };
 // The Job selector's names, shown beside AI Upscale so restore and expand
@@ -9694,14 +9697,14 @@ function renderImageAi(payload) {
 }
 
 function imageAiCountCells(row) {
-  return ["ai_upscale", "reframe", "free_upscale", "undo"]
+  return ["ai_upscale", "reframe", "free_upscale", "hd_upscale", "undo"]
     .map((k) => `<td class="num${row[k] ? "" : " is-zero"}">${formatCount(row[k] || 0)}</td>`)
     .join("");
 }
 
 const IMAGE_AI_COUNT_HEADS =
   "<th class=\"num\">AI Upscale</th><th class=\"num\">Reframe</th>" +
-  "<th class=\"num\">Free Upscale</th><th class=\"num\">Undo</th>";
+  "<th class=\"num\">Free Upscale</th><th class=\"num\">HD Upscale</th><th class=\"num\">Undo</th>";
 
 function renderImageAiPeople(rows) {
   const box = document.getElementById("imageai-people");
@@ -11578,6 +11581,73 @@ async function runFreeUpscale() {
   }
 }
 document.getElementById("free-upscale-btn")?.addEventListener("click", () => runFreeUpscale());
+
+/* HD Upscale, through /api/hd-upscale: AI Upscale's gpt-image-1.5 restore
+   (~$0.12, skipped for a source already 1536px or larger), then a free 2x
+   lanczos + sharpen on our server to ~3072px. Same page, same zoom and pan,
+   and Undo AI Enhance reverts it like the others. */
+async function runHdUpscale() {
+  const img = state.mainImage;
+  const owner = activePage();
+  if (!img || imageJobFor(owner)) return;
+  const say = (msg, kind) => setEnhanceStatus(msg, kind, owner);
+  const pixIdAtPress = state.pixId || "";
+  imageJobs.set(owner.id, "hd_upscale");
+  say("HD Upscale — restoring with ChatGPT (gpt-image-1.5), then enlarging to HD. This can take up to a minute…");
+  syncImageAIUI();
+  try {
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth || img.width;
+    c.height = img.naturalHeight || img.height;
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    // PNG keeps every pixel; past ~2500px it would outgrow the 12 MB upload
+    // cap, and a 0.95 JPEG of a picture that large loses nothing visible.
+    const big = Math.max(c.width, c.height) > 2500;
+    const blob = await new Promise((r) => c.toBlob(r, big ? "image/jpeg" : "image/png", 0.95));
+    if (!blob) throw new Error("Could not read the picture.");
+    const form = new FormData();
+    form.append("width", String(c.width));
+    form.append("height", String(c.height));
+    form.append("pixId", pixIdAtPress);
+    form.append("pageId", owner?.id || "");
+    form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
+    form.append("image", blob, big ? "source.jpg" : "source.png");
+    const resp = await fetch("/api/hd-upscale", { method: "POST", body: form });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.skipped) {
+      say(`Already HD (${c.width}x${c.height}) — nothing to upscale, no charge.`, "success");
+      return;
+    }
+    if (!resp.ok || !data.image) {
+      throw Object.assign(new Error(data.error || `HD Upscale failed (${resp.status}).`), { moderated: Boolean(data.moderated) });
+    }
+    const src = await collectEnhancedImage(data.image);
+    const out = new Image();
+    await new Promise((resolve, reject) => {
+      out.onload = resolve;
+      out.onerror = () => reject(new Error("Upscaled image failed to load."));
+      out.src = src;
+    });
+    rememberImageBeforeAI(owner, img);
+    noteAIImage(owner, out);
+    await ensureImageFocalPoint(out);
+    commitFieldToPage(owner, "mainImage", out);
+    renderPoster();
+    const billed = !data.ai ? " — no AI cost"
+      : data.cached ? " (restore from cache, no charge)"
+      : (data.cost ? ` — $${data.cost.usd.toFixed(3)}` : "");
+    const note = data.enlarged === false ? " The enlarge step is unavailable on this server, so this is the restore alone." : "";
+    say(`✓ HD Upscale done — ${c.width}x${c.height} → ${out.naturalWidth}x${out.naturalHeight} via ${data.engine || "gpt-image-1.5"}${billed}.${note}`, "success");
+  } catch (err) {
+    // A safety refusal is an answer, not a fault — same as AI Upscale.
+    if (err.moderated) say(err.message, "success");
+    else say(`HD Upscale failed: ${err.message || "unknown error"}`, "error");
+  } finally {
+    imageJobs.delete(owner.id);
+    syncImageAIUI();
+  }
+}
+document.getElementById("hd-upscale-btn")?.addEventListener("click", () => runHdUpscale());
 
 const imageUndoBtn = document.getElementById("image-undo-btn");
 if (imageUndoBtn) imageUndoBtn.addEventListener("click", () => revertImageToOriginal());

@@ -98,7 +98,7 @@ console.log("\nA paid call is credited to the button that made it");
   ck("expand is AI Upscale with a different Job", actionForJob("expand") === "ai_upscale");
   ck("anything unrecognised is AI Upscale", actionForJob(undefined) === "ai_upscale");
   ck("the four buttons are the report's filter set",
-    IMAGE_ACTIONS.join() === "ai_upscale,reframe,free_upscale,undo");
+    IMAGE_ACTIONS.join() === "ai_upscale,reframe,free_upscale,hd_upscale,undo");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

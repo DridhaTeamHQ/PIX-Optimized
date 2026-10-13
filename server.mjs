@@ -380,6 +380,8 @@ const PUBLIC_API_ROUTES = new Set([
    by habit, by a stale tab, or by curl — is refused. */
 const REVIEWER_ONLY_API_ROUTES = new Set([
   "/api/upscale-image",
+  // HD Upscale runs the same paid gpt-image-1.5 restore as AI Upscale.
+  "/api/hd-upscale",
 ]);
 
 const server = http.createServer(async (req, res) => {
@@ -491,6 +493,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/api/upscale-image") {
     await handleUpscaleImage(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/hd-upscale") {
+    await handleHdUpscale(req, res);
     return;
   }
 
@@ -2788,7 +2795,7 @@ function logImageAction(req, entry, images = {}) {
 function enhanceResultImage(address) {
   const token = String(address || "").slice(ENHANCE_RESULT_PATH.length + 1);
   const hit = enhanceResults.get(token);
-  return hit ? { buffer: hit.png, mime: "image/png" } : null;
+  return hit ? { buffer: hit.png, mime: hit.mime || "image/png" } : null;
 }
 
 function dataUrlImage(dataUrl) {
@@ -5530,9 +5537,10 @@ const ENHANCE_RESULT_PATH = "/api/enhance-result";
 const enhanceResults = new Map();   // token -> { png, at }
 let enhanceResultBytes = 0;
 
-function publishEnhanceResult(png) {
+// `mime` is image/jpeg for an HD Upscale: a 3072px PNG runs ~15 MB, the JPEG ~2.
+function publishEnhanceResult(png, mime = "image/png") {
   const token = randomUUID();
-  enhanceResults.set(token, { png, at: Date.now() });
+  enhanceResults.set(token, { png, mime, at: Date.now() });
   enhanceResultBytes += png.length;
   /* Shares its ceiling with the cache because it shares its Buffers: an entry
      in both maps is one allocation referenced twice, so the two counters
@@ -5568,7 +5576,7 @@ function handleEnhanceResult(req, res) {
     return;
   }
   res.writeHead(200, {
-    "Content-Type": "image/png",
+    "Content-Type": hit.mime || "image/png",
     "Content-Length": hit.png.length,
     // Private: it is one reviewer's unpublished picture, and the token that
     // names it is the only thing protecting it.
@@ -6490,7 +6498,9 @@ const UPSCALE_UNSHARP = env("UPSCALE_UNSHARP") || "1.2";     // unsharp luma amo
 // sharpening colour channels buys nothing and amplifies compression blotches.
 const SHARPEN_CHAIN = `unsharp=5:5:${UPSCALE_UNSHARP}:5:5:0,cas=strength=${UPSCALE_SHARPEN}`;
 
-async function upscaleLocally(buffer, mime) {
+/* `maxLongEdge` and `jpeg` are for HD Upscale, which enlarges a 1536px
+   gpt-image return to ~3072 and needs it small enough to carry. */
+async function upscaleLocally(buffer, mime, { maxLongEdge = UPSCALE_MAX_LONG_EDGE, jpeg = false } = {}) {
   if (!ffmpegAvailable) return null;
 
   const job = randomUUID().replace(/-/g, "");
@@ -6498,7 +6508,7 @@ async function upscaleLocally(buffer, mime) {
   mkdirSync(dir, { recursive: true });
   const ext = mime === "image/jpeg" ? "jpg" : "png";
   const inPath = join(dir, `in.${ext}`);
-  const outPath = join(dir, "out.png");
+  const outPath = join(dir, jpeg ? "out.jpg" : "out.png");
 
   try {
     writeFileSync(inPath, buffer);
@@ -6528,7 +6538,7 @@ async function upscaleLocally(buffer, mime) {
        Never below 1: this route enlarges or leaves alone, and silently
        shrinking someone's upload would be a strange way to answer "enhance". */
     const longEdge = Math.max(w, h);
-    const headroom = UPSCALE_MAX_LONG_EDGE / longEdge;
+    const headroom = maxLongEdge / longEdge;
     const factor = headroom > 1.02 ? Math.min(2, headroom) : 1;
     const outW = Math.round(w * factor / 2) * 2;   // even dimensions keep every encoder happy
     const outH = Math.round(h * factor / 2) * 2;
@@ -6542,7 +6552,7 @@ async function upscaleLocally(buffer, mime) {
     const t0 = Date.now();
     const enc = await run("ffmpeg", [
       "-hide_banner", "-loglevel", "error", "-y", "-i", inPath,
-      "-vf", filters, "-frames:v", "1", outPath,
+      "-vf", filters, "-frames:v", "1", ...(jpeg ? ["-q:v", "2"] : []), outPath,
     ], 60_000);
 
     if (enc.code !== 0 || !existsSync(outPath)) {
@@ -6557,8 +6567,11 @@ async function upscaleLocally(buffer, mime) {
       `(lanczos + unsharp ${UPSCALE_UNSHARP} + cas ${UPSCALE_SHARPEN}) ` +
       `in ${Date.now() - t0}ms, ${(out.length / 1048576).toFixed(2)} MB`,
     );
+    const outMime = jpeg ? "image/jpeg" : "image/png";
     return {
-      dataUrl: `data:image/png;base64,${out.toString("base64")}`,
+      dataUrl: `data:${outMime};base64,${out.toString("base64")}`,
+      buffer: out,
+      mime: outMime,
       engine: `lanczos+sharpen ${outW}x${outH}`,
     };
   } catch (err) {
@@ -6648,6 +6661,125 @@ async function handleFreeUpscale(req, res) {
     sendJson(res, 500, { error: err.message || "Free Upscale failed." });
     logImageAction(req, {
       ...audit, outcome: "failed", error: err.message || "Free Upscale failed.", durationMs: Date.now() - t0,
+    }, { before: image });
+  }
+}
+
+/* ── HD Upscale: gpt-image-1.5 restore, then a free 2x enlarge ─────────────
+   The answer to "AI Upscale is not HD", at AI Upscale's price. gpt-image-1.5
+   stops at 1536px on the long edge (§2.4 of IMAGES.md), so the resolution has
+   to come from somewhere else — and paying gpt-image-2 ~$0.48 a press to draw
+   4K natively was judged too expensive. So this is two steps:
+
+     1. the same restore AI Upscale runs: gpt-image-1.5, quality medium, the
+        same prompt, cache, hourly cap and spend guard (~$0.12 measured). It recovers
+        the detail. Only run when the source is under 1536px — above that the
+        model would be handed a shrunk copy and could only lose detail.
+     2. ffmpeg's lanczos + unsharp/CAS chain (upscaleLocally) takes that
+        result 2x, to HD_UPSCALE_LONG_EDGE (3072). Free, about a second.
+
+   Step 2 enlarges and sharpens what step 1 drew; it does not invent detail.
+   The result is a JPEG: the same picture as PNG at 3072px is ~15 MB. */
+const HD_UPSCALE_LONG_EDGE = Number(env("HD_UPSCALE_LONG_EDGE") || 3072);
+const HD_AI_MAX_EDGE = 1536;
+
+async function handleHdUpscale(req, res) {
+  const t0 = Date.now();
+  let audit = { action: "hd_upscale", job: "restore" };
+  let image = null;
+  try {
+    const read = await readEnhanceEdit(req);
+    image = read.image;
+    const fields = read.fields || {};
+    const src = imageSize(image.buffer);
+    const width = src?.width || Number(fields.width) || 0;
+    const height = src?.height || Number(fields.height) || 0;
+    const longEdge = Math.max(width, height);
+    audit = { ...audit, ...auditFields(fields), sourceW: width, sourceH: height };
+
+    if (longEdge >= HD_UPSCALE_LONG_EDGE * 0.95) {
+      sendJson(res, 200, { skipped: true, width, height });
+      return;
+    }
+
+    // Step 1 — the paid restore, only where the model can add pixels.
+    let restored = image;
+    let payload = null;
+    if (longEdge && longEdge < HD_AI_MAX_EDGE) {
+      const blocked = enhanceBlocked();
+      if (blocked) { sendJson(res, blocked.status, { error: blocked.error }); return; }
+      const gateCharge = await enhanceSpendGate(req, res);
+      if (!gateCharge) {
+        // enhanceSpendGate has already answered with which limit it was.
+        logImageAction(req, { ...audit, outcome: "limit", error: "Hourly or spend limit reached." }, { before: image });
+        return;
+      }
+      payload = await runEnhanceEdit({
+        buffer: image.buffer,
+        mime: enhanceMime(image.mime),
+        mode: "restore",
+        size: sizeForRatio("", width >= height ? "landscape" : "portrait", width, height),
+        headline: decodeURIComponent(String(fields.headline || "")).slice(0, 200),
+        decidedBy: "hd-upscale",
+        onCharge: gateCharge,
+      });
+      restored = enhanceResultImage(payload.image);
+      if (!restored) throw new Error("The restored picture could not be read back. Press HD Upscale again.");
+    } else {
+      audit.job = null;
+    }
+
+    // Step 2 — the free enlarge.
+    const big = await upscaleLocally(restored.buffer, restored.mime, {
+      maxLongEdge: HD_UPSCALE_LONG_EDGE, jpeg: true,
+    });
+    const costUsd = payload ? (payload.cached ? 0 : (payload.cost?.usd ?? null)) : 0;
+    if (!big) {
+      if (!payload) {
+        const error = ffmpegAvailable
+          ? "The image could not be enlarged. Check the server log for the ffmpeg error."
+          : "HD Upscale needs ffmpeg, which is not installed on this server.";
+        sendJson(res, 503, { error });
+        logImageAction(req, { ...audit, outcome: "failed", error, durationMs: Date.now() - t0 }, { before: image });
+        return;
+      }
+      // The restore was paid for; hand it back at 1536 rather than throw it away.
+      console.warn("⚠ HD upscale: enlarge step unavailable — returning the 1536px restore");
+      sendJson(res, 200, { ...payload, ai: true, enlarged: false });
+      logImageAction(req, {
+        ...audit, outcome: "success", engine: payload.engine, costUsd, cached: Boolean(payload.cached),
+        durationMs: Date.now() - t0,
+      }, { before: image, after: restored });
+      return;
+    }
+
+    const got = imageSize(big.buffer);
+    const engine = payload ? `${payload.engine} + ${big.engine}` : big.engine;
+    console.log(
+      `✓ HD upscale ${width}x${height} → ${got?.width}x${got?.height} via ${engine} in ${Date.now() - t0}ms` +
+      (payload ? (payload.cached ? " (restore from cache, no charge)" : payload.cost ? ` — $${payload.cost.usd.toFixed(4)}` : "") : " — no AI, no cost"),
+    );
+    sendJson(res, 200, {
+      // An address, not the bytes: see publishEnhanceResult.
+      image: publishEnhanceResult(big.buffer, big.mime),
+      engine,
+      ai: Boolean(payload),
+      cached: Boolean(payload?.cached),
+      cost: payload && !payload.cached ? payload.cost : null,
+      enlarged: true,
+      width: got?.width || null,
+      height: got?.height || null,
+    });
+    logImageAction(req, {
+      ...audit, outcome: "success", engine, costUsd, cached: Boolean(payload?.cached),
+      durationMs: Date.now() - t0,
+    }, { before: image, after: { buffer: big.buffer, mime: big.mime } });
+  } catch (err) {
+    console.error("✗ hd-upscale error:", err);
+    const error = err.message || "HD Upscale failed.";
+    sendJson(res, Number(err.status) || 500, { error, ...(err.moderated ? { moderated: true } : {}) });
+    logImageAction(req, {
+      ...audit, outcome: err.moderated ? "refused" : "failed", error, durationMs: Date.now() - t0,
     }, { before: image });
   }
 }

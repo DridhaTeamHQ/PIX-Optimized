@@ -426,6 +426,32 @@ being fixed.
 `DISABLE_GPT_IMAGE=true` switches the route off entirely and returns 503. It no
 longer diverts to anything, because there is nothing left to divert to.
 
+### 2.12 HD Upscale — past 1536px at AI Upscale's price
+
+`POST /api/hd-upscale` — reviewer only, the **HD Upscale** button. gpt-image-1.5 cannot
+return more than 1536px (§2.4), so the resolution comes from a second, free step:
+
+1. **Restore** — exactly what AI Upscale runs: `runEnhanceEdit` with `mode: "restore"`,
+   gpt-image-1.5 at `IMAGE_QUALITY` (medium), the same prompt, result cache, hourly cap
+   (`ENHANCE_RATE_MAX`, shared) and spend guard. Measured at **$0.11–0.14** a press (input fidelity bills the upload too), the same as AI Upscale. Only run when the source's
+   long edge is under 1536px; above that the model would be handed a shrunk copy and could
+   only lose detail, so a larger source skips straight to step 2 and costs nothing.
+2. **Enlarge** — `upscaleLocally`: ffmpeg lanczos + unsharp/CAS, 2x, to
+   `HD_UPSCALE_LONG_EDGE` (3072), JPEG at `-q:v 2`. Free, about a second. Needs ffmpeg,
+   which the Docker image installs. Without it the paid restore is still returned, at 1536.
+
+Step 2 enlarges and sharpens what step 1 drew; it does not invent new detail. A source
+already at about 3072px is not sent (`skipped`, no charge).
+
+gpt-image-2, which draws up to 3824px natively, was tried for this button and measured at
+**$0.48** a press (768×512 → 3520×2336, quality high) — about ten times this route — and
+declined on cost.
+
+| | |
+|---|---|
+| audit | `hd_upscale` in `pix_image_actions`, `job: restore` when step 1 ran, with a column on the AI Usage page |
+| delivery | the same `/api/enhance-result/<uuid>` address as AI Upscale, now carrying its own content type |
+
 ---
 
 ## 3. Frame sizes
@@ -778,6 +804,7 @@ Current cost: ~5ms median per render, 0 dropped frames while typing.
 | `DISABLE_GPT_IMAGE` | unset | `true` switches the route off and returns 503 |
 | `PEXELS_API_KEY` | — | Stock images; source skipped silently when unset |
 | `FAL_KEY` | — | Flux generation |
+| `HD_UPSCALE_LONG_EDGE` | `3072` | Long edge HD Upscale enlarges to (at most 2x the restore) |
 
 ---
 

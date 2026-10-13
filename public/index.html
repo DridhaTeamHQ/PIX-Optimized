@@ -678,6 +678,14 @@
               <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
               AI Upscale (paid)
             </button>
+            <!-- HD Upscale: AI Upscale's gpt-image-1.5 restore (~$0.12), then a
+                 free 2x enlarge + sharpen on our server to ~3072px — the
+                 resolution AI Upscale alone cannot reach (it stops at 1536). -->
+            <button type="button" id="hd-upscale-btn" class="btn-ai btn-hd-upscale" disabled
+                    title="Restores the photo with ChatGPT (gpt-image-1.5, ~$0.12), then enlarges it to ~3000px for free.">
+              <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
+              HD Upscale
+            </button>
             <!-- Free Upscale: ffmpeg Lanczos + sharpen on our own server. No
                  OpenAI call, no cost. -->
             <button type="button" id="free-upscale-btn" class="btn-ai btn-free-upscale" disabled
@@ -1493,6 +1501,7 @@
             <option value="ai_upscale">AI Upscale (paid)</option>
             <option value="reframe">Reframe (paid)</option>
             <option value="free_upscale">Free Upscale</option>
+            <option value="hd_upscale">HD Upscale (paid)</option>
             <option value="undo">Undo AI Enhance</option>
           </select>
         </label>

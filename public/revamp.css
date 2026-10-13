@@ -2633,6 +2633,18 @@ body.nav-collapsed .cms-sidebar .view-tab:hover::after {
   opacity: 0.55;
 }
 
+/* HD Upscale: the high-resolution press — a deep violet, apart from both. */
+.btn-ai.btn-hd-upscale,
+:root[data-theme="dark"] .btn-ai.btn-hd-upscale {
+  background: #5b3cc4;
+  color: #ffffff;
+  margin-top: 8px;
+}
+.btn-ai.btn-hd-upscale:hover:not(:disabled) {
+  background: #45289f;
+  color: #ffffff;
+}
+
 /* Free Upscale: costs nothing, so it gets a calm green. */
 .btn-ai.btn-free-upscale,
 :root[data-theme="dark"] .btn-ai.btn-free-upscale {
