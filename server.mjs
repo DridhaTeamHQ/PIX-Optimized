@@ -6501,10 +6501,59 @@ const UPSCALE_UNSHARP = env("UPSCALE_UNSHARP") || "1.2";     // unsharp luma amo
 // sharpening colour channels buys nothing and amplifies compression blotches.
 const SHARPEN_CHAIN = `unsharp=5:5:${UPSCALE_UNSHARP}:5:5:0,cas=strength=${UPSCALE_SHARPEN}`;
 
+/* How much to enlarge: 2x, but never past the cap, and only when it is a real
+   enlargement — see the note inside upscaleLocally. Shared by both engines. */
+function enlargeFactor(w, h, maxLongEdge) {
+  const headroom = maxLongEdge / Math.max(w, h);
+  return headroom > 1.02 ? Math.min(2, headroom) : 1;
+}
+
+/* The same enlarge without ffmpeg, through sharp (libvips). ffmpeg is in the
+   Docker image but not on a developer's machine, where Free Upscale and HD
+   Upscale used to answer "needs ffmpeg". Lanczos3 is the same kernel; the
+   sharpen approximates the unsharp + CAS chain (flat areas barely touched,
+   edges lifted). Loaded lazily so a missing install is a null, not a crash. */
+let sharpLib;
+async function loadSharp() {
+  if (sharpLib === undefined) {
+    try { sharpLib = (await import("sharp")).default; } catch { sharpLib = null; }
+  }
+  return sharpLib;
+}
+
+async function upscaleWithSharp(buffer, { maxLongEdge, jpeg }) {
+  const sharp = await loadSharp();
+  if (!sharp) return null;
+  try {
+    const t0 = Date.now();
+    const meta = await sharp(buffer).metadata();
+    const w = meta.width, h = meta.height;
+    if (!w || !h) return null;
+    const factor = enlargeFactor(w, h, maxLongEdge);
+    const outW = Math.round(w * factor / 2) * 2;
+    const outH = Math.round(h * factor / 2) * 2;
+    let pipe = sharp(buffer).rotate();
+    if (factor > 1.01) pipe = pipe.resize(outW, outH, { kernel: "lanczos3", fit: "fill" });
+    pipe = pipe.sharpen({ sigma: 1, m1: 0.6, m2: 2.4 });
+    const out = await (jpeg ? pipe.jpeg({ quality: 92, mozjpeg: true }) : pipe.png()).toBuffer();
+    const outMime = jpeg ? "image/jpeg" : "image/png";
+    console.log(`✓ upscaled ${w}x${h} → ${outW}x${outH} (sharp lanczos3 + sharpen) in ${Date.now() - t0}ms, ${(out.length / 1048576).toFixed(2)} MB`);
+    return {
+      dataUrl: `data:${outMime};base64,${out.toString("base64")}`,
+      buffer: out,
+      mime: outMime,
+      engine: `lanczos+sharpen ${outW}x${outH}`,
+    };
+  } catch (err) {
+    console.warn(`⚠ sharp upscale error: ${err.message}`);
+    return null;
+  }
+}
+
 /* `maxLongEdge` and `jpeg` are for HD Upscale, which enlarges a 1536px
    gpt-image return to ~3072 and needs it small enough to carry. */
 async function upscaleLocally(buffer, mime, { maxLongEdge = UPSCALE_MAX_LONG_EDGE, jpeg = false } = {}) {
-  if (!ffmpegAvailable) return null;
+  if (!ffmpegAvailable) return upscaleWithSharp(buffer, { maxLongEdge, jpeg });
 
   const job = randomUUID().replace(/-/g, "");
   const dir = join(tmpdir(), `pix-upscale-${job}`);
@@ -6540,9 +6589,7 @@ async function upscaleLocally(buffer, mime, { maxLongEdge = UPSCALE_MAX_LONG_EDG
 
        Never below 1: this route enlarges or leaves alone, and silently
        shrinking someone's upload would be a strange way to answer "enhance". */
-    const longEdge = Math.max(w, h);
-    const headroom = maxLongEdge / longEdge;
-    const factor = headroom > 1.02 ? Math.min(2, headroom) : 1;
+    const factor = enlargeFactor(w, h, maxLongEdge);
     const outW = Math.round(w * factor / 2) * 2;   // even dimensions keep every encoder happy
     const outH = Math.round(h * factor / 2) * 2;
 
@@ -6647,9 +6694,9 @@ async function handleFreeUpscale(req, res) {
     }
     const local = await upscaleLocally(image.buffer, image.mime);
     if (!local) {
-      const error = ffmpegAvailable
-        ? "The image could not be upscaled. Check the server log for the ffmpeg error."
-        : "Free Upscale needs ffmpeg, which is not installed on this server.";
+      const error = (ffmpegAvailable || await loadSharp())
+        ? "The image could not be upscaled. Check the server log for the error."
+        : "Free Upscale needs ffmpeg or sharp on the server. Run npm install.";
       sendJson(res, 503, { error });
       logImageAction(req, { ...audit, outcome: "failed", error, durationMs: Date.now() - t0 }, { before: image });
       return;
@@ -6739,9 +6786,9 @@ async function handleHdUpscale(req, res) {
     const costUsd = payload ? (payload.cached ? 0 : (payload.cost?.usd ?? null)) : 0;
     if (!big) {
       if (!payload) {
-        const error = ffmpegAvailable
-          ? "The image could not be enlarged. Check the server log for the ffmpeg error."
-          : "HD Upscale needs ffmpeg, which is not installed on this server.";
+        const error = (ffmpegAvailable || await loadSharp())
+          ? "The image could not be enlarged. Check the server log for the error."
+          : "HD Upscale needs ffmpeg or sharp on the server. Run npm install.";
         sendJson(res, 503, { error });
         logImageAction(req, { ...audit, outcome: "failed", error, durationMs: Date.now() - t0 }, { before: image });
         return;
