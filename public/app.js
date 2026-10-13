@@ -67,10 +67,8 @@ async function renderExportBlob(cropOpts = null, targetLongEdges = EXPORT_LONG_E
 // 4K/8K poster PNG blows well past that.
 const X_EXPORT_SCALE = 2;
 
-// Text-preview paragraph font (the bullet copy drawn on the canvas in "Text"
-// mode). Keep the paragraph copy firmly bold in both measure and draw passes
-// so the rendered text doesn't drift between lighter/heavier states.
-const PREVIEW_TEXT_WEIGHT = 700;
+// The small UI copy drawn on the cards — timestamp, footer. The text page's
+// points have their own face; see TEXT_POINT.
 const PREVIEW_TEXT_FONT = "'Poppins', 'Segoe UI', Arial, sans-serif";
 
 const IMAGE_PAN_LIMIT = 900;
@@ -662,6 +660,8 @@ document.fonts.ready.then(async () => {
        lines once the real faces arrived. */
     await document.fonts.load("700 46px 'Roboto Serif'");
     await document.fonts.load("500 41px 'Roboto Serif'");
+    // The text page's [highlighted] point is measured for wrapping in this.
+    await document.fonts.load("500 42px 'Roboto'");
     await document.fonts.load(TAG_FONT);
     await document.fonts.load(TAG_CHIP_FONT);
   } catch (e) { /* font may already be loaded */ }
@@ -1686,7 +1686,7 @@ function inferDailyMattrKeywords() {
 
 function defaultDailyMattrContent() {
   const headline = cleanHeadlineForPublish(state.headline);
-  const detail = normalizeDetailTextClient(state.detailText || "");
+  const detail = plainHighlightedPoints(normalizeDetailTextClient(state.detailText || ""));
   if (!headline) return storyPagesCaption();
   return detail ? `${headline}\n\n${detail}`.trim() : headline;
 }
@@ -4945,14 +4945,17 @@ function drawPixTextScreen() {
     `blur(${textBlur}px)`,
   );
 
-  const textX = L.headline.x;
+  // The design's column, not the poster headline's: see TEXT_POINT.
+  const textX = W * TEXT_POINT.sidePadding;
+  const textMaxWidth = W - 2 * textX;
   const minTextY = state.forceTextExport ? H * 0.16 : H * 0.1;
   const bottomTextPadding = state.forceTextExport ? L.headline.bottomPadding : 335;
   const lastLineY = H - bottomTextPadding * (H / 1700);
   /* Measured before anything is painted over the photograph, because the glass
      and the fade below are anchored to the top of this block. */
   const textLayout = layoutWrappedPreviewText(
-    getDetailTextForPreview(), minTextY, L.headline.maxWidth, lastLineY, 39 * s, 61 * s);
+    getDetailTextForPreview(), minTextY, textMaxWidth, lastLineY,
+    TEXT_POINT.size * s, TEXT_POINT.lineHeight * s);
 
   /* ── The same treatment the poster and the story page get ──────────────
 
@@ -4985,7 +4988,7 @@ function drawPixTextScreen() {
 
   drawFixedLogos();
 
-  drawWrappedPreviewTextLayout(textLayout, textX, L.headline.maxWidth);
+  drawWrappedPreviewTextLayout(textLayout, textX, textMaxWidth);
 
   if (!state.forceTextExport) {
     drawEngagementBar();
@@ -5875,7 +5878,7 @@ function layoutWrappedPreviewText(text, minY, maxWidth, maxY, fontSize, lineHeig
   }
 
   ctx.save();
-  ctx.font = `${PREVIEW_TEXT_WEIGHT} ${Math.round(fit.fontSize)}px ${PREVIEW_TEXT_FONT}`;
+  ctx.font = textPointFont(fit.fontSize);
   const visibleHeight = visibleLines.reduce((sum, line) => sum + getPreviewTextStep(line, fit.lineHeight), 0);
   ctx.restore();
   const startY = Math.max(minY, maxY - Math.max(0, visibleHeight - fit.lineHeight));
@@ -5891,19 +5894,166 @@ function drawWrappedPreviewTextLayout(layout, x, maxWidth) {
   ctx.shadowColor = "rgba(0, 0, 0, 0.48)";
   ctx.shadowBlur = 14;
   ctx.shadowOffsetY = 5;
-  ctx.font = `${PREVIEW_TEXT_WEIGHT} ${Math.round(fit.fontSize)}px ${PREVIEW_TEXT_FONT}`;
+  const pointSize = fit.fontSize;
+  ctx.font = textPointFont(pointSize);
+  // With textBaseline "top", the cap height starts this far below the line.
+  const pointCapOffset = ctx.measureText("H").actualBoundingBoxAscent;
+
+  // `x` is the left padding line: the bullet dots and the opening quote both
+  // start exactly on it, and every line's words start `indent` after it.
+  // Other points only dim when THIS page shows a highlight — a page without
+  // one stays all-white.
+  const marks = fit.lines.marks || [];
+  const indent = fit.lines.indent || 0;
+  const lineX = x + indent;
+  const hasHighlight = visibleLines.some((line, i) => line && marks[i]?.kind === "quote");
+  const plainFill = hasHighlight ? `rgba(255, 255, 255, ${TEXT_POINT.dimAlpha})` : "#ffffff";
+
   let cy = startY;
   visibleLines.forEach((visibleLine, index) => {
     if (visibleLine) {
+      const mark = marks[index];
+      const quote = mark?.kind === "quote";
+      ctx.fillStyle = quote ? "#ffffff" : plainFill;
       if (index === ellipsisIndex) {
-        drawEllipsizedLine(visibleLine, x, cy, maxWidth);
+        drawEllipsizedLine(visibleLine, lineX, cy, quote ? fit.lines.quoteTextWidth : fit.lines.textWidth);
       } else {
-        ctx.fillText(visibleLine, x, cy);
+        ctx.fillText(visibleLine, lineX, cy);
+      }
+      if (mark?.kind === "bullet" && mark.first) {
+        // Placed by its ink, not its advance box: the dot's own side bearing
+        // would otherwise push it a pixel or two off the padding line.
+        ctx.fillText("•", x + ctx.measureText("•").actualBoundingBoxLeft, cy);
+      }
+      const capTop = cy - pointCapOffset;
+      if (quote && mark.first) {
+        drawQuoteMark(x, capTop - TEXT_POINT.openLift * pointSize, pointSize, false);
+      }
+      // A point cut short by the ellipsis has not ended, so it is not closed.
+      if (quote && mark.last && index !== ellipsisIndex) {
+        // From the ink of the last character, not its advance: the gap is
+        // specified as the space between the full stop and the mark.
+        const end = lineX + ctx.measureText(visibleLine).actualBoundingBoxRight + TEXT_POINT.closeGap * pointSize;
+        drawQuoteMark(end, capTop - TEXT_POINT.closeLift * pointSize, pointSize, true);
       }
     }
     cy += getPreviewTextStep(visibleLine, fit.lineHeight);
   });
   ctx.restore();
+}
+
+/* ── The highlighted point ───────────────────────────────────────────────────
+
+   A point typed inside square brackets — "[His consistency across formats…]"
+   — is the one the text page pulls out (Figma "PIx - Second Screen"): full
+   white, hung between the brand's blue quote marks in place of a bullet,
+   while every other point on that page steps back to white at 70%.
+
+   Only a WHOLE point counts. "[Kohli] holds records" is a bracketed word in an
+   ordinary sentence and is drawn exactly as typed; turning the line into a
+   quote because it happens to start with a bracket would be a surprise.
+   Closing punctuation after the bracket is fine — "[…]." — and an unclosed
+   "[" counts too, so the point lights up while it is still being typed
+   rather than only once the closing bracket lands.
+
+   Every point on the page, highlighted or not, is set as the design sets it:
+   Roboto Medium, 17.3px on a 27px line, on the 382-wide card. It used to be
+   39px Poppins Bold at 920 wide — 16.2px on the card, heavier and smaller —
+   in the poster headline's column. Size and line are stored at 920 wide
+   (x 920/382) and scaled like everything else; when a page is too full the
+   fit shrinks them together.
+
+   The padding is 28px on each side of the card. On the left it runs to the
+   bullet dots and the opening quote, which both start exactly on that line;
+   on the right nothing — no word, no closing mark — crosses it. Every line of
+   every point, first and wrapped, bulleted or highlighted, starts one quote
+   mark and its 5.8px gap in from the padding line, so all the words share
+   one left edge. Points sit 8px apart — the design notes' "Point Gap 8px",
+   not the frame's 10px auto-layout gap — whether or not a blank line was
+   typed between them.
+
+   Each quote mark is 9.5px wide and 9px high. The opening mark sits 5.8px
+   before the first word; the closing one 4px after the last character's ink
+   — the full stop, usually. Each mark's top rides a little above the cap
+   height: 2.6px on the opening mark (it was 3.6px, and read as sitting too
+   high), 1px on the closing one. Lengths below are fractions of the 17.3px
+   point unless they say otherwise. */
+const TEXT_POINT = {
+  dimAlpha: 0.7,
+  fontWeight: 500,
+  fontFamily: "'Roboto', 'Segoe UI', Arial, sans-serif",
+  size: 17.3 * 920 / 382,
+  lineHeight: 27 * 920 / 382,
+  gap: 8 / 27,                  // of the line height
+  sidePadding: 28 / 382,        // of the card width, each side
+  quoteWidth: 9.5 / 17.3,
+  quoteHeight: 9 / 17.3,
+  quoteGap: 5.8 / 17.3,         // opening mark to the first word
+  closeGap: 4 / 17.3,           // last character's ink to the closing mark
+  openLift: 2.6 / 17.3,
+  closeLift: 1 / 17.3,
+};
+
+// The two marks as delivered for the design — LOGO.svg opening, LOGO (1).svg
+// closing — the brand's quote glyph, the same as the left quote in logo.svg.
+// Both files carry each path twice (a double fill that only darkens the
+// anti-aliased edge); one copy of each is kept. The artwork spans
+// 9.5034 x 9 of their 10 x 9 view box and is scaled by that extent.
+const QUOTE_MARK = {
+  width: 9.50342,
+  height: 9,
+  open: "M4.21083 4.17264V0H0V5.33549C0 5.95834 0.146978 6.57435 0.443814 7.12191C0.647349 7.49728 0.944545 7.88994 1.37827 8.23037C2.60921 9.19653 3.98928 8.99407 4.21119 8.95769V7.32941C4.05773 7.3204 3.08508 7.24656 2.42621 6.40756C1.64557 5.41402 2.00185 4.23388 2.03355 4.13446C2.62037 4.14706 3.624 4.16003 4.21119 4.17264H4.21083Z"
+    + "M9.50282 4.17264V0H5.29199V5.33549C5.29199 5.95834 5.43897 6.57435 5.73581 7.12191C5.93934 7.49728 6.23654 7.88994 6.67026 8.23037C7.9012 9.19653 9.28127 8.99407 9.50318 8.95769V7.32941C9.34972 7.3204 8.37708 7.24656 7.7182 6.40756C6.93756 5.41402 7.29384 4.23388 7.32554 4.13446C7.91237 4.14706 8.91599 4.16003 9.50318 4.17264H9.50282Z",
+  close: "M5.29259 4.17264V0H9.50342V5.33549C9.50342 5.95834 9.35644 6.57435 9.0596 7.12191C8.85607 7.49728 8.55887 7.88994 8.12515 8.23037C6.89421 9.19653 5.51414 8.99407 5.29223 8.95769V7.32941C5.44569 7.3204 6.41834 7.24656 7.07721 6.40756C7.85785 5.41402 7.50157 4.23388 7.46987 4.13446C6.88304 4.14706 5.87942 4.16003 5.29223 4.17264H5.29259Z"
+    + "M0.00059856 4.17264V0H4.21143V5.33549C4.21143 5.95834 4.06445 6.57435 3.76761 7.12191C3.56408 7.49728 3.26688 7.88994 2.83315 8.23037C1.60222 9.19653 0.222145 8.99407 0.00023797 8.95769V7.32941C0.1537 7.3204 1.12634 7.24656 1.78522 6.40756C2.56586 5.41402 2.20958 4.23388 2.17788 4.13446C1.59105 4.14706 0.587427 4.16003 0.00023797 4.17264H0.00059856Z",
+};
+const quoteMarkPaths = {};
+
+function highlightedPointText(point) {
+  if (!point.startsWith("[")) return null;
+  const close = point.indexOf("]");
+  const tail = close === -1 ? "" : point.slice(close + 1).trim();
+  if (!/^[.,;:!?…]*$/.test(tail)) return null;
+  const inner = point.slice(1, close === -1 ? undefined : close).trim();
+  return inner ? inner + tail : null;
+}
+
+// Not rounded: 17.3px on the card is 41.66px at 920 wide, and rounding that
+// to 42 sets the copy at 17.44px instead.
+function textPointFont(fontSize) {
+  return `${TEXT_POINT.fontWeight} ${fontSize.toFixed(2)}px ${TEXT_POINT.fontFamily}`;
+}
+
+// From the padding line to where the words start: one quote mark and its gap.
+// The bullet dots sit on the same line, so bulleted words start here too.
+function pointIndent(fontSize) {
+  return (TEXT_POINT.quoteWidth + TEXT_POINT.quoteGap) * fontSize;
+}
+
+function quoteMarkWidth(pointSize) {
+  return TEXT_POINT.quoteWidth * pointSize;
+}
+
+// 9.5 x 9 on the card at the full 17.3px point; scaled with it when a page shrinks.
+function drawQuoteMark(x, top, fontSize, closing) {
+  const which = closing ? "close" : "open";
+  quoteMarkPaths[which] ||= new Path2D(QUOTE_MARK[which]);
+  ctx.save();
+  ctx.translate(x, top);
+  ctx.scale(quoteMarkWidth(fontSize) / QUOTE_MARK.width, (TEXT_POINT.quoteHeight * fontSize) / QUOTE_MARK.height);
+  ctx.fillStyle = BRAND_BLUE;
+  ctx.fill(quoteMarkPaths[which]);
+  ctx.restore();
+}
+
+// The caption has no quote marks to draw, so a highlighted point goes out as
+// its plain words rather than with the brackets around them.
+function plainHighlightedPoints(text) {
+  return text.split("\n").map((line) => {
+    const [, prefix, point] = /^(\s*(?:[•*-]\s+)?)(.*)$/.exec(line);
+    const inner = highlightedPointText(point.trim());
+    return inner ? prefix + inner : line;
+  }).join("\n");
 }
 
 function drawWrappedPreviewText(text, x, minY, maxWidth, maxY, fontSize, lineHeight) {
@@ -5919,8 +6069,8 @@ function fitPreviewTextLines(text, maxWidth, minY, maxY, fontSize, lineHeight, o
   for (const scale of scales) {
     const nextFontSize = Math.max(fontSize * scale, fontSize * 0.62);
     const nextLineHeight = Math.max(nextFontSize * 1.34, lineHeight * scale);
-    ctx.font = `${PREVIEW_TEXT_WEIGHT} ${Math.round(nextFontSize)}px ${PREVIEW_TEXT_FONT}`;
-    const lines = buildPreviewTextLines(text, maxWidth, options);
+    ctx.font = textPointFont(nextFontSize);
+    const lines = buildPreviewTextLines(text, maxWidth, nextFontSize, options);
     const maxBlockHeight = Math.max(nextLineHeight, maxY - minY + nextLineHeight);
     const visibleLines = getVisiblePreviewLines(lines, nextLineHeight, maxBlockHeight);
     const fit = { fontSize: nextFontSize, lineHeight: nextLineHeight, lines, visibleLines };
@@ -5943,25 +6093,78 @@ function getVisiblePreviewLines(lines, lineHeight, maxBlockHeight) {
   return visibleLines.length ? visibleLines : [lines[0] || ""];
 }
 
+// A blank line is the gap between two points — 8px against a 27px line on
+// the text page.
 function getPreviewTextStep(line, lineHeight) {
-  return line ? lineHeight : lineHeight * (state.previewMode === "text" ? 0.28 : 0.42);
+  return line ? lineHeight : lineHeight * (state.previewMode === "text" ? TEXT_POINT.gap : 0.42);
 }
 
-function buildPreviewTextLines(text, maxWidth, options = {}) {
-  const sourceLines = limitDetailTextClient(text, options).split("\n");
-  const lines = [];
-  sourceLines.forEach((sourceLine) => {
+/* `lines.marks` runs alongside the lines, one entry each: null for a gap or
+   unmarked copy, { kind: "bullet" } on each line of a bulleted point, and
+   { kind: "quote" } on each line of a [highlighted] one — `first` takes the
+   dot or the opening quote, `last` the closing quote.
+
+   The dot is no longer part of the text. It used to be the first character
+   of the line, so the words after it were wrapped back under it to the
+   padding line; it is drawn on that line now, and `lines.indent` is where
+   every line's words start after it. No bullets and no highlight on the page
+   means no indent — a plain paragraph starts on the padding line. */
+function buildPreviewTextLines(text, maxWidth, fontSize, options = {}) {
+  const points = limitDetailTextClient(text, options).split("\n").map((sourceLine) => {
     const trimmed = sourceLine.trim();
-    if (!trimmed) {
-      if (lines.length && lines[lines.length - 1] !== "") lines.push("");
+    if (!trimmed) return null;
+    // The fresh bullet Enter leaves while typing: a dot on the padding line, no words yet.
+    if (/^[\u2022*-]$/.test(trimmed)) return { kind: "bullet", text: "" };
+    const isBullet = /^[\u2022*-]\s+/.test(trimmed);
+    const point = isBullet ? trimmed.replace(/^[\u2022*-]\s+/, "") : trimmed;
+    const highlighted = highlightedPointText(point);
+    if (highlighted) return { kind: "quote", text: highlighted };
+    return { kind: isBullet ? "bullet" : null, text: point };
+  });
+  const hasMarks = points.some((p) => p?.kind);
+  // maxWidth runs padding line to padding line. A page with no marks starts
+  // its words on the padding line itself.
+  const indent = hasMarks ? pointIndent(fontSize) : 0;
+  const textWidth = maxWidth - indent;
+  // A highlighted point also keeps room for its closing mark, so the mark
+  // ends inside the right padding instead of running into it.
+  const quoteTextWidth = textWidth - (TEXT_POINT.closeGap + TEXT_POINT.quoteWidth) * fontSize;
+
+  const lines = [];
+  const marks = [];
+  const pushGap = () => {
+    if (lines.length && lines[lines.length - 1] !== "") {
+      lines.push("");
+      marks.push(null);
+    }
+  };
+  points.forEach((point) => {
+    if (!point) {
+      pushGap();
       return;
     }
+    // In a list every line is its own point and gets the same gap before it,
+    // typed blank line or not. Generated points arrive one per line with none.
+    if (hasMarks) pushGap();
 
-    const lineText = /^[\u2022*-]\s+/.test(trimmed) ? `\u2022 ${trimmed.replace(/^[\u2022*-]\s+/, "")}` : trimmed;
-    lines.push(...wrapPreviewTextLine(lineText, maxWidth));
+    const wrapped = point.text
+      ? wrapPreviewTextLine(point.text, point.kind === "quote" ? quoteTextWidth : textWidth)
+      : [" "];
+    wrapped.forEach((line, i) => {
+      lines.push(line);
+      marks.push(point.kind ? { kind: point.kind, first: i === 0, last: i === wrapped.length - 1 } : null);
+    });
   });
 
-  return lines.length ? lines : [""];
+  if (!lines.length) {
+    lines.push("");
+    marks.push(null);
+  }
+  lines.marks = marks;
+  lines.indent = indent;
+  lines.textWidth = textWidth;
+  lines.quoteTextWidth = quoteTextWidth;
+  return lines;
 }
 
 function wrapPreviewTextLine(text, maxWidth) {
