@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
+
 const [, , configArg = "config/sample-post.json"] = process.argv;
 const configPath = resolve(process.cwd(), configArg);
 const configDir = dirname(configPath);
