@@ -264,7 +264,7 @@ near-zero bill into a real one, and `medium` is the correction.
   the answer or the price (quality included). A repeat press on the same photo
   is served from memory and reported to the reviewer as `(from cache, no
   charge)`. In-process, 1-hour TTL, evicted by total bytes.
-- **Rate limit.** `ENHANCE_RATE_MAX` (default 40) billed enhances per user per
+- **Rate limit.** `ENHANCE_RATE_MAX` (default 50) billed enhances per user per
   hour, then a 429. Cache hits do not count against it, because they cost
   nothing. This is a spend cap, not a security control — the reviewer-only
   route gate is that.

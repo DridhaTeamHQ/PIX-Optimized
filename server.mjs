@@ -594,6 +594,12 @@ const server = http.createServer(async (req, res) => {
          difference between noticing a runaway and hearing about it from the
          billing page a week later. */
       spend: spendGuard.snapshot(),
+      /* The per-user ceiling actually in force, so a change to
+         ENHANCE_RATE_MAX on Railway can be confirmed by looking rather than by
+         spending eleven billed calls to find out. */
+      limits: {
+        enhancePerUserPerHour: ENHANCE_RATE_MAX,
+      },
     });
     return;
   }
@@ -5352,7 +5358,7 @@ const ENHANCE_SIZES = new Set(["1024x1024", "1024x1536", "1536x1024", "auto"]);
 
    ENHANCE_RATE_MAX is generous on purpose. A reviewer doing real work will
    not reach it; something looping will reach it in seconds. */
-const ENHANCE_RATE_MAX = Number(process.env.ENHANCE_RATE_MAX) || 10;
+const ENHANCE_RATE_MAX = Number(process.env.ENHANCE_RATE_MAX) || 50;
 const ENHANCE_RATE_WINDOW_MS = 60 * 60_000;
 const enhanceLimiter = createRateLimiter({
   windowMs: ENHANCE_RATE_WINDOW_MS,
