@@ -5906,9 +5906,11 @@ function drawWrappedPreviewTextLayout(layout, x, maxWidth) {
   // Other points only dim when THIS page shows a highlight — a page without
   // one stays all-white.
   const marks = fit.lines.marks || [];
+  const runs = fit.lines.runs || [];
   const indent = fit.lines.indent || 0;
   const lineX = x + indent;
-  const hasHighlight = visibleLines.some((line, i) => line && marks[i]?.kind === "quote");
+  const hasHighlight = visibleLines.some((line, i) =>
+    line && (marks[i]?.kind === "quote" || runs[i]?.some((token) => token.hl)));
   const plainFill = hasHighlight ? `rgba(255, 255, 255, ${TEXT_POINT.dimAlpha})` : "#ffffff";
 
   let cy = startY;
@@ -5917,7 +5919,11 @@ function drawWrappedPreviewTextLayout(layout, x, maxWidth) {
       const mark = marks[index];
       const quote = mark?.kind === "quote";
       ctx.fillStyle = quote ? "#ffffff" : plainFill;
-      if (index === ellipsisIndex) {
+      if (runs[index]) {
+        drawInlineHighlightLine(runs[index], lineX, cy, pointSize, cy - pointCapOffset,
+          plainFill, index === ellipsisIndex ? fit.lines.textWidth : null);
+        ctx.fillStyle = plainFill;
+      } else if (index === ellipsisIndex) {
         drawEllipsizedLine(visibleLine, lineX, cy, quote ? fit.lines.quoteTextWidth : fit.lines.textWidth);
       } else {
         ctx.fillText(visibleLine, lineX, cy);
@@ -5951,12 +5957,17 @@ function drawWrappedPreviewTextLayout(layout, x, maxWidth) {
    white, hung between the brand's blue quote marks in place of a bullet,
    while every other point on that page steps back to white at 70%.
 
-   Only a WHOLE point counts. "[Kohli] holds records" is a bracketed word in an
-   ordinary sentence and is drawn exactly as typed; turning the line into a
-   quote because it happens to start with a bracket would be a surprise.
-   Closing punctuation after the bracket is fine — "[…]." — and an unclosed
-   "[" counts too, so the point lights up while it is still being typed
-   rather than only once the closing bracket lands.
+   A WHOLE bracketed point hangs its marks in the margin, as above. Closing
+   punctuation after the bracket is fine — "[…]." — and an unclosed "[" counts
+   too, so the point lights up while it is still being typed rather than only
+   once the closing bracket lands.
+
+   Brackets can also pick out words anywhere inside a point — "His publicist
+   confirmed that [Mitte, an advocate for disability rights], died…" or
+   "[Kohli] holds records". Those words are drawn full white between the same
+   blue marks, set inline with the sentence (the point keeps its bullet), and
+   the rest of the page dims exactly as it does for a whole-point highlight.
+   An unclosed "[" mid-point lights up to the end of the point while typing.
 
    Every point on the page, highlighted or not, is set as the design sets it:
    Roboto Medium, 17.3px on a 27px line, on the 382-wide card. It used to be
@@ -6016,8 +6027,135 @@ function highlightedPointText(point) {
   const close = point.indexOf("]");
   const tail = close === -1 ? "" : point.slice(close + 1).trim();
   if (!/^[.,;:!?…]*$/.test(tail)) return null;
-  const inner = point.slice(1, close === -1 ? undefined : close).trim();
+  // "[- RJ Mitte …]": a list dash typed inside the brackets is not part of the quote.
+  const inner = point.slice(1, close === -1 ? undefined : close).trim().replace(/^[•*-]\s+/, "");
   return inner ? inner + tail : null;
+}
+
+// A point split at its brackets: [{ text, hl, closed }], plain and highlighted
+// runs in order. A stray "]" with no "[" before it is ordinary text.
+function parsePointRuns(point) {
+  const runs = [];
+  let rest = point;
+  while (rest) {
+    const open = rest.indexOf("[");
+    if (open === -1) {
+      runs.push({ text: rest, hl: false });
+      break;
+    }
+    if (open > 0) runs.push({ text: rest.slice(0, open), hl: false });
+    const close = rest.indexOf("]", open + 1);
+    runs.push({ text: rest.slice(open + 1, close === -1 ? undefined : close), hl: true, closed: close !== -1 });
+    rest = close === -1 ? "" : rest.slice(close + 1);
+  }
+  return runs;
+}
+
+/* A point with [words] highlighted inside it, as words to wrap: each one says
+   whether it is highlighted, whether the opening or closing mark goes with
+   it, and whether it is `attached` — typed with no space before it, like the
+   comma in "[…rights], died". */
+function inlineHighlightTokens(point) {
+  const runs = parsePointRuns(point);
+  if (!runs.some((run) => run.hl && run.text.trim())) return null;
+  const tokens = [];
+  let prev = null;
+  runs.forEach((run) => {
+    const words = run.text.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      if (!run.hl) prev = run;
+      return;
+    }
+    const spaced = run.hl ? !prev || /\s$/.test(prev.text) || prev.hl : /^\s/.test(run.text);
+    words.forEach((word, i) => tokens.push({
+      text: word,
+      hl: run.hl,
+      attached: i === 0 && tokens.length > 0 && !spaced,
+      open: run.hl && i === 0,
+      close: run.hl && run.closed && i === words.length - 1,
+    }));
+    prev = run;
+  });
+  return tokens;
+}
+
+// Where each word and mark of an inline-highlight line falls, from the line's
+// left edge, in the current ctx font. The marks keep the whole-point spacing:
+// 5.8px before the first highlighted word, 4px after the last one's ink.
+function placeInlineTokens(tokens, fontSize) {
+  const space = ctx.measureText(" ").width;
+  const openAdvance = pointIndent(fontSize);
+  const closeGap = TEXT_POINT.closeGap * fontSize;
+  let x = 0;
+  let afterClose = false;
+  const placed = tokens.map((token, i) => {
+    if (i > 0) x += token.attached ? (afterClose ? closeGap : 0) : space;
+    let openX = null;
+    if (token.open) {
+      openX = x;
+      x += openAdvance;
+    }
+    const metrics = ctx.measureText(token.text);
+    const textX = x;
+    x += metrics.width;
+    let closeX = null;
+    if (token.close) {
+      closeX = textX + metrics.actualBoundingBoxRight + closeGap;
+      x = closeX + quoteMarkWidth(fontSize);
+    }
+    afterClose = token.close;
+    return { token, x: textX, openX, closeX };
+  });
+  return { placed, width: x };
+}
+
+// Wraps by word, keeping attached words together so a line never starts on
+// the comma that followed a closing bracket.
+function wrapInlineTokens(tokens, maxWidth, fontSize) {
+  const units = [];
+  tokens.forEach((token) => {
+    if (token.attached && units.length) units[units.length - 1].push(token);
+    else units.push([token]);
+  });
+  const lines = [];
+  let line = [];
+  units.forEach((unit) => {
+    const test = line.concat(unit);
+    if (!line.length || placeInlineTokens(test, fontSize).width <= maxWidth) {
+      line = test;
+      return;
+    }
+    lines.push(line);
+    line = unit;
+  });
+  if (line.length) lines.push(line);
+  return lines;
+}
+
+// `ellipsisWidth` is set on the last visible line of an overflowing page:
+// words come off the end until "..." fits, and a highlight cut short there
+// has not ended, so it is not closed.
+function drawInlineHighlightLine(tokens, x, y, fontSize, capTop, plainFill, ellipsisWidth) {
+  let line = tokens;
+  let ellipsis = "";
+  if (ellipsisWidth !== null) {
+    ellipsis = "...";
+    const ellipsisAdvance = ctx.measureText(ellipsis).width;
+    line = tokens.map((token) => ({ ...token }));
+    while (line.length > 1 && placeInlineTokens(line, fontSize).width + ellipsisAdvance > ellipsisWidth) line.pop();
+    line[line.length - 1].close = false;
+  }
+  const { placed, width } = placeInlineTokens(line, fontSize);
+  placed.forEach(({ token, x: tx, openX, closeX }) => {
+    ctx.fillStyle = token.hl ? "#ffffff" : plainFill;
+    ctx.fillText(token.text, x + tx, y);
+    if (openX !== null) drawQuoteMark(x + openX, capTop - TEXT_POINT.openLift * fontSize, fontSize, false);
+    if (closeX !== null) drawQuoteMark(x + closeX, capTop - TEXT_POINT.closeLift * fontSize, fontSize, true);
+  });
+  if (ellipsis) {
+    ctx.fillStyle = line[line.length - 1].hl ? "#ffffff" : plainFill;
+    ctx.fillText(ellipsis, x + width, y);
+  }
 }
 
 // Not rounded: 17.3px on the card is 41.66px at 920 wide, and rounding that
@@ -6054,7 +6192,8 @@ function plainHighlightedPoints(text) {
   return text.split("\n").map((line) => {
     const [, prefix, point] = /^(\s*(?:[•*-]\s+)?)(.*)$/.exec(line);
     const inner = highlightedPointText(point.trim());
-    return inner ? prefix + inner : line;
+    if (inner) return prefix + inner;
+    return inlineHighlightTokens(point) ? prefix + parsePointRuns(point).map((run) => run.text).join("") : line;
   }).join("\n");
 }
 
@@ -6104,7 +6243,9 @@ function getPreviewTextStep(line, lineHeight) {
 /* `lines.marks` runs alongside the lines, one entry each: null for a gap or
    unmarked copy, { kind: "bullet" } on each line of a bulleted point, and
    { kind: "quote" } on each line of a [highlighted] one — `first` takes the
-   dot or the opening quote, `last` the closing quote.
+   dot or the opening quote, `last` the closing quote. `lines.runs` runs
+   alongside too: null, or the words of a line that has [words] highlighted
+   inside it, which is then drawn word by word with its marks inline.
 
    The dot is no longer part of the text. It used to be the first character
    of the line, so the words after it were wrapped back under it to the
@@ -6121,7 +6262,7 @@ function buildPreviewTextLines(text, maxWidth, fontSize, options = {}) {
     const point = isBullet ? trimmed.replace(/^[\u2022*-]\s+/, "") : trimmed;
     const highlighted = highlightedPointText(point);
     if (highlighted) return { kind: "quote", text: highlighted };
-    return { kind: isBullet ? "bullet" : null, text: point };
+    return { kind: isBullet ? "bullet" : null, text: point, tokens: inlineHighlightTokens(point) };
   });
   const hasMarks = points.some((p) => p?.kind);
   // maxWidth runs padding line to padding line. A page with no marks starts
@@ -6134,10 +6275,12 @@ function buildPreviewTextLines(text, maxWidth, fontSize, options = {}) {
 
   const lines = [];
   const marks = [];
+  const runs = [];
   const pushGap = () => {
     if (lines.length && lines[lines.length - 1] !== "") {
       lines.push("");
       marks.push(null);
+      runs.push(null);
     }
   };
   points.forEach((point) => {
@@ -6149,20 +6292,33 @@ function buildPreviewTextLines(text, maxWidth, fontSize, options = {}) {
     // typed blank line or not. Generated points arrive one per line with none.
     if (hasMarks) pushGap();
 
+    if (point.tokens) {
+      const wrappedTokens = wrapInlineTokens(point.tokens, textWidth, fontSize);
+      wrappedTokens.forEach((lineTokens, i) => {
+        lines.push(lineTokens.map((token) => token.text).join(" "));
+        marks.push(point.kind ? { kind: point.kind, first: i === 0, last: i === wrappedTokens.length - 1 } : null);
+        runs.push(lineTokens);
+      });
+      return;
+    }
+
     const wrapped = point.text
       ? wrapPreviewTextLine(point.text, point.kind === "quote" ? quoteTextWidth : textWidth)
       : [" "];
     wrapped.forEach((line, i) => {
       lines.push(line);
       marks.push(point.kind ? { kind: point.kind, first: i === 0, last: i === wrapped.length - 1 } : null);
+      runs.push(null);
     });
   });
 
   if (!lines.length) {
     lines.push("");
     marks.push(null);
+    runs.push(null);
   }
   lines.marks = marks;
+  lines.runs = runs;
   lines.indent = indent;
   lines.textWidth = textWidth;
   lines.quoteTextWidth = quoteTextWidth;
