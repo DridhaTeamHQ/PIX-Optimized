@@ -1063,6 +1063,10 @@ function applySession(user) {
     if (canReviewRole(user.role)) loadAnalytics({ force: true });
     else setView("poster");
   }
+  // Open the screen the address names (/ai-usage, /review, …). Skipped when
+  // already there, where the reloads above have covered it.
+  const routed = viewFromPath(location.pathname);
+  if (user && routed !== currentView) setView(routed, { replace: true });
 }
 
 function setAuthState(status, message) {
@@ -9696,7 +9700,7 @@ if (cmsToday) {
 
 const imageAiView = document.getElementById("imageai-view");
 const IMAGE_ACTION_LABELS = {
-  ai_upscale: "AI Upscale",
+  ai_upscale: "AI Upscale (old)",
   reframe: "Reframe",
   free_upscale: "Free Upscale",
   hd_upscale: "HD Upscale",
@@ -9820,7 +9824,7 @@ async function loadImageAi() {
 
 function renderImageAi(payload) {
   const t = payload.totals || {};
-  for (const key of ["ai_upscale", "reframe", "free_upscale", "undo"]) {
+  for (const key of ["hd_upscale", "reframe", "free_upscale", "undo"]) {
     const el = imageAiView.querySelector(`[data-imageai-value="${key}"]`);
     if (el) el.textContent = formatCount(t[key] || 0);
   }
@@ -9847,22 +9851,27 @@ function renderImageAi(payload) {
     summary.textContent = `${range} · ${person} · ${action ? IMAGE_ACTION_LABELS[action] : "All buttons"}`;
   }
 
-  renderImageAiPeople(payload.people || []);
-  renderImageAiPosts(payload.posts || []);
+  /* AI Upscale was replaced by HD Upscale. Its column stays only for a range
+     that still has presses of it, so older dates still add up. */
+  const keys = IMAGE_AI_COUNT_KEYS.filter((k) => k !== "ai_upscale" || t.ai_upscale);
+  renderImageAiPeople(payload.people || [], keys);
+  renderImageAiPosts(payload.posts || [], keys);
   renderImageAiEvents(payload.events || [], payload.previewDays);
 }
 
-function imageAiCountCells(row) {
-  return ["ai_upscale", "reframe", "free_upscale", "hd_upscale", "undo"]
+const IMAGE_AI_COUNT_KEYS = ["hd_upscale", "reframe", "free_upscale", "undo", "ai_upscale"];
+
+function imageAiCountCells(row, keys) {
+  return keys
     .map((k) => `<td class="num${row[k] ? "" : " is-zero"}">${formatCount(row[k] || 0)}</td>`)
     .join("");
 }
 
-const IMAGE_AI_COUNT_HEADS =
-  "<th class=\"num\">AI Upscale</th><th class=\"num\">Reframe</th>" +
-  "<th class=\"num\">Free Upscale</th><th class=\"num\">HD Upscale</th><th class=\"num\">Undo</th>";
+function imageAiCountHeads(keys) {
+  return keys.map((k) => `<th class="num">${IMAGE_ACTION_LABELS[k]}</th>`).join("");
+}
 
-function renderImageAiPeople(rows) {
+function renderImageAiPeople(rows, keys) {
   const box = document.getElementById("imageai-people");
   if (!box) return;
   if (!rows.length) {
@@ -9872,14 +9881,14 @@ function renderImageAiPeople(rows) {
   box.innerHTML = `
     <table class="imageai-table">
       <thead><tr>
-        <th>Person</th>${IMAGE_AI_COUNT_HEADS}
+        <th>Person</th>${imageAiCountHeads(keys)}
         <th class="num">Didn't complete</th><th class="num">OpenAI cost</th><th>Last press</th>
       </tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
           <td><button type="button" class="imageai-link" data-imageai-user="${escapeHtml(r.user_id || "")}"
                       ${r.user_id ? "" : "disabled"}>${escapeHtml(r.user_name)}</button></td>
-          ${imageAiCountCells(r)}
+          ${imageAiCountCells(r, keys)}
           <td class="num${r.failed ? " is-warn" : " is-zero"}">${formatCount(r.failed || 0)}</td>
           <td class="num">${formatUsd(r.cost_usd)}</td>
           <td class="imageai-when">${escapeHtml(imageAiTime(r.last_at))}</td>
@@ -9899,7 +9908,7 @@ function imageAiPostStatus(row) {
   return { label: "Pending", cls: "" };
 }
 
-function renderImageAiPosts(rows) {
+function renderImageAiPosts(rows, keys) {
   const box = document.getElementById("imageai-posts");
   if (!box) return;
   if (!rows.length) {
@@ -9909,7 +9918,7 @@ function renderImageAiPosts(rows) {
   box.innerHTML = `
     <table class="imageai-table">
       <thead><tr>
-        <th>Post</th><th>Pressed by</th>${IMAGE_AI_COUNT_HEADS}
+        <th>Post</th><th>Pressed by</th>${imageAiCountHeads(keys)}
         <th class="num">OpenAI cost</th><th></th>
       </tr></thead>
       <tbody>${rows.map((r) => {
@@ -9925,7 +9934,7 @@ function renderImageAiPosts(rows) {
             </span>
           </td>
           <td class="imageai-who">${escapeHtml(r.people || "")}</td>
-          ${imageAiCountCells(r)}
+          ${imageAiCountCells(r, keys)}
           <td class="num">${formatUsd(r.cost_usd)}</td>
           <td class="imageai-actions">
             ${r.pix_id ? `<button type="button" class="btn-ghost imageai-mini" data-imageai-post="${escapeHtml(r.pix_id)}"
@@ -9971,8 +9980,11 @@ function renderImageAiEvents(rows, previewDays) {
     const size = e.source_w && e.source_h
       ? `${e.source_w}×${e.source_h}${e.result_w && e.result_h ? ` → ${e.result_w}×${e.result_h}` : ""}`
       : "";
-    const cost = e.action === "reframe" || e.action === "ai_upscale"
-      ? (e.cached ? "from cache, free" : e.cost_usd != null ? formatUsd(e.cost_usd, 3) : "")
+    // A skip already says "no charge" in its outcome.
+    const cost = (e.action === "reframe" || e.action === "ai_upscale" || e.action === "hd_upscale") && e.outcome !== "skipped"
+      ? (e.cached ? "from cache, free"
+        : e.cost_usd == null ? ""
+        : Number(e.cost_usd) ? formatUsd(e.cost_usd, 3) : "no charge")
       : "";
     const facts = [
       e.engine ? escapeHtml(e.engine) : "",
@@ -10045,7 +10057,28 @@ if (imageAiView) {
   });
 }
 
-function setView(view) {
+/* ── Routes ──
+   Each screen has its own path, so AI Usage (or Review, or Writers) can be
+   bookmarked, reloaded and shared, and Back returns to the previous screen.
+   server.mjs serves index.html for exactly these paths; add one there too. */
+const VIEW_PATHS = {
+  poster:    "/",
+  article:   "/article",
+  review:    "/review",
+  analytics: "/analytics",
+  writers:   "/writers",
+  imageai:   "/ai-usage",
+};
+
+function viewFromPath(pathname) {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  return Object.keys(VIEW_PATHS).find((v) => VIEW_PATHS[v] === path) || "poster";
+}
+
+let currentView = "poster";
+
+function setView(view, { replace = false } = {}) {
+  const requested = view;
   // Signed out, there is nothing to list.
   if ((view === "review" || view === "analytics" || view === "writers" || view === "imageai") && !state.user) view = "poster";
   // Analytics and Writers are QA-only; a writer landing here (stale tab, deep
@@ -10056,6 +10089,15 @@ function setView(view) {
   if (view === "writers" && !isAdminRole(state.user?.role)) view = "poster";
   // AI Usage is the admin's too, for the same reason. The server refuses it as well.
   if (view === "imageai" && !isAdminRole(state.user?.role)) view = "poster";
+
+  currentView = view;
+  // A refused route is replaced, not pushed, so Back does not lead to it again.
+  const path = VIEW_PATHS[view] || "/";
+  if (location.pathname !== path) {
+    const url = path + location.search + location.hash;
+    if (replace || view !== requested) history.replaceState(null, "", url);
+    else history.pushState(null, "", url);
+  }
 
   document.body.classList.toggle("view-article", view === "article");
   document.body.classList.toggle("view-review", view === "review");
@@ -10089,6 +10131,12 @@ if (viewTabs) {
     if (tab) setView(tab.dataset.view);
   });
 }
+
+// Back/Forward between screens. Signed out, the gate is up and applySession
+// routes once someone signs in.
+window.addEventListener("popstate", () => {
+  if (state.user) setView(viewFromPath(location.pathname), { replace: true });
+});
 
 /* ═══════════════════════ AI Article Writer ═══════════════════════ */
 
@@ -11694,6 +11742,24 @@ if (aiReframeBtn) aiReframeBtn.addEventListener("click", () => runImageAI("refra
 /* Free Upscale: ffmpeg on our own server, no OpenAI, no cost. Sends the
    picture at its native size and puts the enlarged copy back on the same
    page, keeping the writer's zoom and pan. Undo AI Enhance reverts it too. */
+/* The upload for Free and HD Upscale. The server refuses anything over 12 MB,
+   and a large photo as PNG passes that easily — two Free Upscales failed on
+   exactly this. PNG keeps every pixel, so it is used whenever it fits;
+   otherwise JPEG, which at 0.95 loses nothing visible, stepping down until it
+   fits. */
+const UPSCALE_UPLOAD_MAX_BYTES = 11 * 1024 * 1024;
+async function upscaleUploadBlob(canvas) {
+  const encode = (type, q) => new Promise((r) => canvas.toBlob(r, type, q));
+  const png = await encode("image/png");
+  if (png && png.size <= UPSCALE_UPLOAD_MAX_BYTES) return { blob: png, name: "source.png" };
+  for (const q of [0.95, 0.9, 0.82]) {
+    const jpg = await encode("image/jpeg", q);
+    if (jpg && jpg.size <= UPSCALE_UPLOAD_MAX_BYTES) return { blob: jpg, name: "source.jpg" };
+  }
+  if (!png) throw new Error("Could not read the picture.");
+  throw new Error("This picture is too large to upload, even compressed.");
+}
+
 async function runFreeUpscale() {
   const img = state.mainImage;
   const owner = activePage();
@@ -11701,6 +11767,8 @@ async function runFreeUpscale() {
   if (!img || imageJobFor(owner)) return;
   const say = (msg, kind) => setEnhanceStatus(msg, kind, owner);
   const pixIdAtPress = state.pixId || "";
+  // Once the upload is sent the server records the press, however it ends.
+  let sent = false;
   rememberImageBeforeAI(owner, img);
   imageJobs.set(owner.id, "free_upscale");
   say("Free Upscale — restoring detail on our own server. This can take up to 2 minutes, no OpenAI cost…");
@@ -11710,8 +11778,7 @@ async function runFreeUpscale() {
     c.width = img.naturalWidth || img.width;
     c.height = img.naturalHeight || img.height;
     c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    const blob = await new Promise((r) => c.toBlob(r, "image/png"));
-    if (!blob) throw new Error("Could not read the picture.");
+    const upload = await upscaleUploadBlob(c);
     const form = new FormData();
     form.append("width", String(c.width));
     form.append("height", String(c.height));
@@ -11719,7 +11786,8 @@ async function runFreeUpscale() {
     form.append("pixId", pixIdAtPress);
     form.append("pageId", owner?.id || "");
     form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
-    form.append("image", blob, "source.png");
+    form.append("image", upload.blob, upload.name);
+    sent = true;
     const resp = await fetch("/api/free-upscale", { method: "POST", body: form });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.image) throw new Error(data.error || `Free Upscale failed (${resp.status}).`);
@@ -11742,6 +11810,7 @@ async function runFreeUpscale() {
       : `Already high resolution (${c.width}x${c.height}) — sharpened only, no OpenAI cost.`);
   } catch (err) {
     say(err.message || "Free Upscale failed.");
+    if (!sent) reportImageAction("free_upscale", "failed", { error: err.message, page: owner, pixId: pixIdAtPress });
   } finally {
     imageJobs.delete(owner.id);
     syncImageAIUI();
@@ -11776,6 +11845,8 @@ async function runHdUpscale() {
   const longEdge = Math.max(w, h);
   // The same test the server makes: below the model's ceiling the restore runs.
   const aiPath = longEdge < MODEL_CEILING_PX;
+  // Once the upload is sent the server records the press, however it ends.
+  let sent = false;
   imageJobs.set(owner.id, "hd_upscale");
   say(aiPath
     ? "HD Upscale — restoring with ChatGPT (gpt-image-1.5), then enlarging to HD. This can take up to a minute…"
@@ -11797,18 +11868,15 @@ async function runHdUpscale() {
     c.width = Math.round(sw * scale);
     c.height = Math.round(sh * scale);
     c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
-    // PNG keeps every pixel; past ~2500px it would outgrow the 12 MB upload
-    // cap, and a 0.95 JPEG of a picture that large loses nothing visible.
-    const big = Math.max(c.width, c.height) > 2500;
-    const blob = await new Promise((r) => c.toBlob(r, big ? "image/jpeg" : "image/png", 0.95));
-    if (!blob) throw new Error("Could not read the picture.");
+    const upload = await upscaleUploadBlob(c);
     const form = new FormData();
     form.append("width", String(c.width));
     form.append("height", String(c.height));
     form.append("pixId", pixIdAtPress);
     form.append("pageId", owner?.id || "");
     form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
-    form.append("image", blob, big ? "source.jpg" : "source.png");
+    form.append("image", upload.blob, upload.name);
+    sent = true;
     const resp = await fetch("/api/hd-upscale", { method: "POST", body: form });
     const data = await resp.json().catch(() => ({}));
     if (resp.ok && data.skipped) {
@@ -11843,6 +11911,7 @@ async function runHdUpscale() {
     // A safety refusal is an answer, not a fault.
     if (err.moderated) say(err.message, "success");
     else say(`HD Upscale failed: ${err.message || "unknown error"}`, "error");
+    if (!sent) reportImageAction("hd_upscale", "failed", { error: err.message, page: owner, pixId: pixIdAtPress });
   } finally {
     imageJobs.delete(owner.id);
     syncImageAIUI();

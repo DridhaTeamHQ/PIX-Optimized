@@ -1440,7 +1440,8 @@
   </section>
 
   <!-- ═══ AI Usage (admin only) ═══
-       Every press of AI Upscale, Reframe, Free Upscale and Undo: counted per
+       Every press of HD Upscale, Reframe, Free Upscale and Undo (and of the
+       retired AI Upscale, for older dates): counted per
        person and per post, with what each paid press cost and the picture it
        produced. Built from /api/image-actions, which refuses anyone else. -->
   <section class="analytics-shell imageai-shell" id="imageai-view" hidden>
@@ -1470,11 +1471,12 @@
           <span>Button</span>
           <select id="imageai-action" class="imageai-select">
             <option value="">All buttons</option>
-            <option value="ai_upscale">AI Upscale (paid)</option>
+            <option value="hd_upscale">HD Upscale (paid)</option>
             <option value="reframe">Reframe (paid)</option>
             <option value="free_upscale">Free Upscale</option>
-            <option value="hd_upscale">HD Upscale (paid)</option>
             <option value="undo">Undo AI Enhance</option>
+            <!-- Replaced by HD Upscale; kept so its older presses can still be found. -->
+            <option value="ai_upscale">AI Upscale (old button)</option>
           </select>
         </label>
         <div class="analytics-roster-filter analytics-roster-dates">
@@ -1490,8 +1492,8 @@
 
     <section class="analytics-hero imageai-hero">
       <div class="analytics-stat-card accent-a">
-        <span class="analytics-stat-label">AI Upscale</span>
-        <strong class="analytics-stat-value" data-imageai-value="ai_upscale">0</strong>
+        <span class="analytics-stat-label">HD Upscale</span>
+        <strong class="analytics-stat-value" data-imageai-value="hd_upscale">0</strong>
         <span class="analytics-stat-sub">Paid presses</span>
       </div>
       <div class="analytics-stat-card accent-e">

@@ -325,6 +325,11 @@ const assetMtimeMs = ["app.js", "styles.css"].reduce((newest, rel) => {
 }, 0);
 console.log(`\u2713 asset version ${ASSET_V}`);
 
+/* Paths that serve the app shell, one per screen. Keep in step with
+   VIEW_PATHS in public/app.js. No trailing slash: index.html links its assets
+   as "./app.js", which would then resolve under the route. */
+const APP_ROUTES = new Set(["/article", "/review", "/analytics", "/writers", "/ai-usage"]);
+
 function withAssetVersion(html) {
   return html
     .replace(/(<script[^>]+src=")\.\/app\.js(")/g, `$1./app.js?v=${ASSET_V}$2`)
@@ -616,6 +621,14 @@ const server = http.createServer(async (req, res) => {
   // Drop any query string before disk lookup
   const qIdx = urlPath.indexOf("?");
   if (qIdx >= 0) urlPath = urlPath.slice(0, qIdx);
+  // The app's own screens (VIEW_PATHS in app.js) are all index.html; app.js
+  // reads the path and opens the matching one.
+  if (urlPath.length > 1 && urlPath.endsWith("/") && APP_ROUTES.has(urlPath.slice(0, -1))) {
+    res.writeHead(301, { Location: urlPath.slice(0, -1) + (qIdx >= 0 ? req.url.slice(qIdx) : "") });
+    res.end();
+    return;
+  }
+  if (APP_ROUTES.has(urlPath)) urlPath = "/index.html";
   try { urlPath = decodeURIComponent(urlPath); } catch { /* leave as-is */ }
   const safePath = normalize(urlPath).replace(/^([.][.][/\\])+/, "");
   const filePath = join(root, safePath);
@@ -6274,9 +6287,6 @@ const REFRAME_LIMIT_PER_PIX = Number(process.env.REFRAME_LIMIT_PER_PIX) || 2;
 const reframeCounts = new Map();
 
 async function handleEnhanceEditStage(req, res) {
-  const blocked = enhanceBlocked();
-  if (blocked) { sendJson(res, blocked.status, { error: blocked.error }); return; }
-
   const t0 = Date.now();
   let read;
   try {
@@ -6301,6 +6311,16 @@ async function handleEnhanceEditStage(req, res) {
   })();
   // The press, as the AI Usage screen will show it. Recorded on every way out.
   const audit = { action: actionForJob(requestedJob), job: requestedJob, ...auditFields(fields) };
+
+  /* After the upload is read rather than before, so a press refused because
+     AI is switched off is still recorded against its post. The browser
+     counts the press as the server's once it is sent. */
+  const blocked = enhanceBlocked();
+  if (blocked) {
+    sendJson(res, blocked.status, { error: blocked.error });
+    logImageAction(req, { ...audit, outcome: "failed", error: blocked.error }, { before: image });
+    return;
+  }
 
   /* Reframe is the costly job: two per page (each story slide its own), per
      user. Keyed by post as well as page: the editor's page ids restart at
@@ -6382,9 +6402,6 @@ async function handleEnhanceEditStage(req, res) {
    something may still be posting to it that way; an expand verdict here
    degrades to restore inside runEnhanceEdit() rather than outpainting blind. */
 async function handleEnhanceSingleShot(req, res) {
-  const blocked = enhanceBlocked();
-  if (blocked) { sendJson(res, blocked.status, { error: blocked.error }); return; }
-
   const t0 = Date.now();
   /* Recorded like the two-stage path, so nothing that reaches a paid call is
      missing from AI Usage. This caller sends no post id; the headline is all
@@ -6395,6 +6412,13 @@ async function handleEnhanceSingleShot(req, res) {
     job: null,
     ...auditFields({ headline: req.headers["x-headline"] }),
   };
+
+  const blocked = enhanceBlocked();
+  if (blocked) {
+    sendJson(res, blocked.status, { error: blocked.error });
+    logImageAction(req, { ...audit, outcome: "failed", error: blocked.error });
+    return;
+  }
 
   const onCharge = await enhanceSpendGate(req, res);
   if (!onCharge) {
@@ -6749,6 +6773,10 @@ async function handleHdUpscale(req, res) {
 
     if (longEdge >= HD_UPSCALE_LONG_EDGE * 0.95) {
       sendJson(res, 200, { skipped: true, width, height });
+      logImageAction(req, {
+        ...audit, job: null, outcome: "skipped", costUsd: 0, durationMs: Date.now() - t0,
+        error: `Already HD at ${width}x${height} — nothing to upscale.`,
+      });
       return;
     }
 
@@ -6757,7 +6785,11 @@ async function handleHdUpscale(req, res) {
     let payload = null;
     if (longEdge && longEdge < HD_AI_MAX_EDGE) {
       const blocked = enhanceBlocked();
-      if (blocked) { sendJson(res, blocked.status, { error: blocked.error }); return; }
+      if (blocked) {
+        sendJson(res, blocked.status, { error: blocked.error });
+        logImageAction(req, { ...audit, outcome: "failed", error: blocked.error }, { before: image });
+        return;
+      }
       const gateCharge = await enhanceSpendGate(req, res);
       if (!gateCharge) {
         // enhanceSpendGate has already answered with which limit it was.

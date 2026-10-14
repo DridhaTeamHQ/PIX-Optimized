@@ -37,6 +37,15 @@ console.log("\nThe browser reports only what the server never sees");
 
   ck("free_upscale is the server's to record",
     cleanClientReport({ action: "free_upscale", outcome: "success" }) === null);
+  ck("hd_upscale success is the server's to record",
+    cleanClientReport({ action: "hd_upscale", outcome: "success" }) === null);
+  ck("hd_upscale skip is the server's to record",
+    cleanClientReport({ action: "hd_upscale", outcome: "skipped" }) === null);
+  for (const action of ["free_upscale", "hd_upscale"]) {
+    const early = cleanClientReport({ action, outcome: "failed", job: "restore", error: "Could not read the picture." });
+    ck(`${action} that failed before its upload is accepted`, early?.action === action && early.outcome === "failed");
+    ck(`${action} report carries no job`, early?.job === null);
+  }
   ck("an unknown button is refused",
     cleanClientReport({ action: "delete_everything", outcome: "success" }) === null);
   ck("an unknown outcome is refused",
