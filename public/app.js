@@ -13380,7 +13380,7 @@ async function publishToDailyMattr({ skipConfirm = false } = {}) {
     facts: [
       `Category: ${catLabel}${stLabel ? ` \u00b7 ${stLabel}` : ""}`,
       `${mediaCount} media item${mediaCount === 1 ? "" : "s"}${hasVideo ? ", including the video" : ""}`,
-      state.pixId ? "The post will be marked approved" : "Not saved yet, so it will not be marked approved",
+      state.pixId ? "The post will be marked approved" : "Not saved yet, so it will be saved first and marked approved",
     ],
     confirmLabel: "Publish now",
   });
@@ -13402,6 +13402,31 @@ async function publishToDailyMattr({ skipConfirm = false } = {}) {
   let publishRequestSent = false;
 
   try {
+
+    /* A post QA builds and publishes without ever pressing Save had no
+       library row, so it never appeared in Review, in anyone's counts or in
+       Analytics — the story went live with no record here. Saved first, as a
+       submitted post, so the publish below carries its id and the server
+       marks it approved and published like any other. A save that fails is
+       QA's call: fix it, or publish without the record, as before. */
+    if (!state.pixId) {
+      setDailyMattrStatus("Saving the post before publishing…");
+      const saved = await savePixToLibrary({ asDraft: false });
+      if (!saved.ok || !state.pixId) {
+        const goUnsaved = await confirmAction({
+          title: "Publish without saving?",
+          body: `The post could not be saved first: ${saved.error || "unknown error"}`,
+          facts: ["Published unsaved, it will not appear in Review or be counted anywhere."],
+          confirmLabel: "Publish anyway",
+          danger: true,
+        });
+        if (!goUnsaved) {
+          setDailyMattrStatus(`Not published — ${saved.error || "the post could not be saved"}.`, "error");
+          return;
+        }
+      }
+      setDailyMattrStatus("Rendering slide images…");
+    }
 
     const form = new FormData();
     form.append("content_en", content);
