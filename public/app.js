@@ -11812,9 +11812,10 @@ function smallPhotoNote(w, h) {
     : "";
 }
 
-/* The server's test, for the status line only: the model has to return at
-   least this many times the pixels it is shown (HD_AI_MIN_GAIN in
-   server.mjs). Above that line HD is a free enlarge. */
+/* The server's test (planHdUpscale in lib/hd-upscale.js), for the status
+   line only: the model has to return at least this many times the pixels it
+   is shown, and be shown at least half the photo. Otherwise HD is a free
+   enlarge. */
 const HD_AI_MIN_GAIN = 1.3;
 const HD_LONG_EDGE = 3072;
 const HD_MIN_ENLARGE = 1.25;   // within a quarter of HD it is "Already HD"
@@ -11822,8 +11823,9 @@ function hdUsesAI(w, h) {
   if (!(w > 0 && h > 0) || HD_LONG_EDGE / Math.max(w, h) < HD_MIN_ENLARGE) return false;
   const shape = nearestModelShape(w / h);
   const shownW = w / h > shape ? h * shape : w;
+  const shownH = w / h > shape ? h : w / shape;
   const modelW = shape > 1 ? 1536 : 1024;
-  return modelW / shownW >= HD_AI_MIN_GAIN;
+  return modelW / shownW >= HD_AI_MIN_GAIN && (shownW * shownH) / (w * h) >= 0.5;
 }
 
 async function runHdUpscale() {
@@ -11837,7 +11839,6 @@ async function runHdUpscale() {
   const aiPath = hdUsesAI(w, h);
   // Once the upload is sent the server records the press, however it ends.
   let sent = false;
-  rememberImageBeforeAI(owner, img);
   imageJobs.set(owner.id, "hd_upscale");
   say(aiPath
     ? "HD Upscale — OpenAI is sharpening the photo; faces and colours are kept from your original. This can take up to a minute…"
@@ -11882,6 +11883,12 @@ async function runHdUpscale() {
       say("HD Upscale finished, but the picture on this page was changed meanwhile, so the result was not applied.");
       return;
     }
+    /* The undo slot is taken here, once there is a result to undo. Taken at
+       the press, a skip or a failure left a slot holding that moment's zoom
+       and pan, and since the first slot wins, a later Reframe undid to the
+       stale framing. The guard above has just confirmed the page still shows
+       img, so this is the framing being replaced. */
+    rememberImageBeforeAI(owner, img);
     noteAIImage(owner, out);
     // The same frame, only larger, so the focal point carries over rather than
     // being guessed again — a re-detection can pick a different face.

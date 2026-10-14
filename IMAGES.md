@@ -452,8 +452,9 @@ Three things caused it:
 Now the whole photograph goes up at its own size, with no crop and no shrink, and:
 
 1. **Plan** (`planHdUpscale`). The model only runs where it can add real resolution: its answer
-   (1536 or 1024 on the long side) must be at least `HD_AI_MIN_GAIN` (1.3) times the pixels it is
-   shown. For a 3:2 photo that is a long edge up to ~1180px, and for a square ~790px. Above
+   (1536 or 1024 on the long side) must be at least 1.3x the pixels it is shown (`HD_AI_MIN_GAIN`, a
+   constant mirrored by the browser's `hdUsesAI`, not an env var), and it must be shown at least
+   half the photo — a 4:1 banner would pay to sharpen a quarter of itself. For a 3:2 photo that is a long edge up to ~1180px, and for a square ~790px. Above
    that line a press is a free enlarge. A photo within a quarter of `HD_UPSCALE_LONG_EDGE` is
    *Already HD* and is skipped. The model is shown the largest centred crop of the nearest
    gpt-image shape, at native pixels (`cropForModel`). That crop is only what the model sees.
@@ -464,7 +465,11 @@ Now the whole photograph goes up at its own size, with no crop and no shrink, an
    Measured at **$0.115–0.118** a press.
 3. **Rebuild on the original** (`hdDetailTransfer`):
    - **Align.** A coarse-to-fine NCC search over scale and shift (~160px, ~512px, then full
-     size to a quarter pixel) registers the restore to the original.
+     size to a quarter pixel) registers the restore to the original. The full-size step compares
+     the original enlarged with the restore put through the split's own down/up round trip: sharp's
+     lanczos enlarge sits half a pixel off centre, and registering against it directly placed the
+     detail half a pixel off (doubled edges, 6-7 dB lost). Every band is no finer than the
+     original's own pixels. The searches yield to the event loop between rows.
    - **Split at the original's resolution.** Everything the original resolves (faces, shapes,
      colour, tone) comes from the original, lanczos-enlarged. From the model the rebuild takes
      only luminance detail finer than the original could record. No colour comes from the model.
@@ -473,10 +478,9 @@ Now the whole photograph goes up at its own size, with no crop and no shrink, an
      stands. The model's contrast is matched by one global slope first, clamped to 0.8–1.25 for
      the comparison. The slope only ever *damps* the detail (`hdDetailScale`): the original's own
      grain drags the slope to 0.6–0.7 on real photos, and dividing by it oversharpened by half.
-   - **Reject.** If the ~512px structure NCC is under 0.55, the model returned some other
-     picture and none of it is used. Do not judge this at full size: there the comparison is
-     between a soft enlargement and the model's invented texture, and faithful answers read
-     0.3–0.5. The real photos read 0.72–0.89 at 512px, and an unrelated picture reads under 0.1.
+   - **Reject.** If the structure NCC at the chosen pose, on the original's own band, is under
+     0.55, the model returned some other picture and none of it is used. Never judge this on the
+     model's fine texture: faithful answers read 0.3–0.5 there.
    - Outside the model's crop the result is the original enlarged, with the detail feathered
      out over 3% of the crop's short side.
 4. **Finish** (`hdFinish`). Lanczos to at most 2x and at most `HD_UPSCALE_LONG_EDGE` (3072), a
@@ -866,7 +870,6 @@ Current cost: ~5ms median per render, 0 dropped frames while typing.
 | `PEXELS_API_KEY` | — | Stock images; source skipped silently when unset |
 | `FAL_KEY` | — | Flux generation |
 | `HD_UPSCALE_LONG_EDGE` | `3072` | Long edge HD Upscale enlarges to (at most 2x). Within a quarter of it a photo is *Already HD* — §2.12 |
-| `HD_AI_MIN_GAIN` | `1.3` | HD Upscale pays for the restore only when the model returns at least this many times the pixels it is shown — §2.12 |
 
 ---
 

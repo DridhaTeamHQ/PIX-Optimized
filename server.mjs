@@ -6770,7 +6770,9 @@ async function handleFreeUpscale(req, res) {
    paid for: step 3 alone, on our CPU. Everything after the restore is sharp,
    so a server without it refuses before anything is spent. */
 const HD_UPSCALE_LONG_EDGE = Number(env("HD_UPSCALE_LONG_EDGE") || 3072);
-const HD_AI_MIN_GAIN = Number(env("HD_AI_MIN_GAIN") || 1.3);
+// Not an environment variable: the browser's status line mirrors it
+// (hdUsesAI in public/app.js), and the two must not drift apart.
+const HD_AI_MIN_GAIN = 1.3;
 
 async function handleHdUpscale(req, res) {
   const t0 = Date.now();
@@ -6838,6 +6840,11 @@ async function handleHdUpscale(req, res) {
         decidedBy: "hd-upscale",
         onCharge: gateCharge,
       });
+      // Into the audit now: the restore is billed whatever happens after it.
+      audit = {
+        ...audit, engine: payload.engine, cached: Boolean(payload.cached),
+        costUsd: payload.cached ? 0 : (payload.cost?.usd ?? null),
+      };
     } else {
       audit.job = null;
     }
@@ -6867,9 +6874,11 @@ async function handleHdUpscale(req, res) {
     const jpeg = await hdFinish(sharp, picture, target, { detail: Boolean(detail && !detail.rejected) });
     const got = imageSize(jpeg);
     const costUsd = payload ? (payload.cached ? 0 : (payload.cost?.usd ?? null)) : 0;
-    const engine = payload
-      ? `${payload.engine} detail on the original + lanczos`
-      : "lanczos + light sharpen";
+    // The audit says whether the paid detail was actually used.
+    const engine = !payload ? "lanczos + light sharpen"
+      : detail?.failed ? `${payload.engine} (rebuild failed, clean enlarge) + lanczos`
+      : detail?.rejected ? `${payload.engine} (detail rejected, clean enlarge) + lanczos`
+      : `${payload.engine} detail on the original + lanczos`;
     console.log(
       `✓ HD upscale ${width}x${height} → ${got?.width}x${got?.height} via ${engine} in ${Date.now() - t0}ms` +
       (payload

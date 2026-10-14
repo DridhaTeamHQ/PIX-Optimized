@@ -136,6 +136,10 @@ console.log("\nplanHdUpscale — what a press does, from the size alone");
   const tall = planHdUpscale(683, 1024);
   ck("683x1024 portrait: the model runs at 1024x1536", tall.ai && tall.size === "1024x1536", JSON.stringify(tall));
   ck("3000x2000: already HD — skipped, nothing spent", planHdUpscale(3000, 2000).skip === true);
+  ck("a 4:1 banner is not paid for: the model would see a quarter of it", [[1600, 400], [2400, 600], [600, 2400], [2400, 30]]
+    .every(([a, b]) => !planHdUpscale(a, b).ai));
+  ck("no output ever passes the 3072 cap", [[1200, 400], [1400, 400], [2400, 300], [2000, 200], [2400, 30], [400, 1200], [1280, 720], [50, 800]]
+    .every(([a, b]) => { const q = planHdUpscale(a, b); return q.skip || Math.max(q.target.width, q.target.height) <= 3072; }));
   ck("a photo and the same photo rotated resolve to mirrored shapes", [[1220, 1000], [900, 700], [640, 1000]].every(([a, b]) => {
     const p1 = planHdUpscale(a, b), p2 = planHdUpscale(b, a);
     return p1.shape.w === p2.shape.h && p1.shape.h === p2.shape.w && p1.ai === p2.ai;
@@ -160,7 +164,7 @@ console.log("\nThe browser agrees with the server about when the model runs");
   const hdUsesAI = factory(MODEL_SHAPES);
   ck("the browser's 'Already HD' line is the server's", /const HD_MIN_ENLARGE = ([\d.]+);/.exec(app)?.[1] === "1.25"
     && /export const HD_MIN_ENLARGE = 1\.25;/.test(read("..", "lib", "hd-upscale.js")));
-  const serverGain = Number(/HD_AI_MIN_GAIN = Number\(env\("HD_AI_MIN_GAIN"\) \|\| ([\d.]+)\)/.exec(server)?.[1]);
+  const serverGain = Number(/const HD_AI_MIN_GAIN = ([\d.]+);/.exec(server)?.[1]);
   ck("the browser's gain line is the server's default", serverGain === 1.3, String(serverGain));
   let disagree = [];
   for (let w = 120; w <= 3200; w += 37) {
@@ -234,8 +238,7 @@ const basePsnr = psnr(upOnly, truth);
   const r = await hdDetailTransfer(sharp, original, grainy, plan);
   ck("a faithful answer covered in invented texture is still recognised as this photo",
     !r.stats.rejected && r.stats.alignment.structure >= 0.55, JSON.stringify(r.stats.alignment));
-  ck("…which the full-size comparison alone would have refused", r.stats.alignment.ncc < 0.55,
-    JSON.stringify(r.stats.alignment));
+  ck("…and clearly so, not on the margin", r.stats.alignment.structure >= 0.7, JSON.stringify(r.stats.alignment));
 }
 {
   /* Also found on real photographs: the original's own grain drags the
@@ -254,6 +257,54 @@ const basePsnr = psnr(upOnly, truth);
   ck("…and the detail is never amplified, whatever the slope", scales.every((v) => v > 0 && v <= 1), scales.join(", "));
   ck("…but a model that boosted contrast is damped back", Math.abs(hdDetailScale(1.2) - 1 / 1.2) < 1e-9
     && Math.abs(hdDetailScale(2) - 1 / 1.25) < 1e-9);
+}
+{
+  /* Found in review: sharp's lanczos enlarge sits half a pixel off centre,
+     and registering the restore against it placed the detail half a pixel
+     off — doubled edges, 6-7 dB lost. The scene here is rendered straight at
+     both sizes, so the right registration is exactly (0,0). */
+  const r = await run(scene());
+  const a = r.stats.alignment;
+  ck("an exactly aligned restore is registered at (0,0), not half a pixel off",
+    Math.abs(a.dx) <= 0.25 && Math.abs(a.dy) <= 0.25 && Math.abs(a.scale - 1) <= 0.001, JSON.stringify(a));
+}
+{
+  // Found in review: below ~240px a PERFECT restore was rejected after being paid for.
+  const tiny = await decodeRgb(sharp, await render(scene(), 180, 120));
+  const tp = planHdUpscale(180, 120);
+  const r = await hdDetailTransfer(sharp, tiny, await render(scene(), tp.shape.w, tp.shape.h), tp);
+  ck("a small photo's perfect restore is accepted, not refused after payment", !r.stats.rejected, JSON.stringify(r.stats));
+}
+{
+  // Found in review: a 1% frame drift fell between coarse scale bins and was refused or misplaced.
+  const mid = await decodeRgb(sharp, await render(scene(), 683, 455));
+  const mp = planHdUpscale(683, 455);
+  const answer = await render(scene({ transform: "translate(768 512) scale(0.99) translate(-768 -512) translate(-5 6)" }), mp.shape.w, mp.shape.h);
+  const r = await hdDetailTransfer(sharp, mid, answer, mp);
+  ck("a restore drifted by 1% is found and used", !r.stats.rejected && Math.abs(r.stats.alignment.scale - 0.99) < 0.004,
+    JSON.stringify(r.stats.alignment));
+}
+{
+  // Found in review: a crop 1px narrower than the photo faded the detail along the photo's own edge.
+  // Shifted so the fine stripes run right up to the left edge.
+  const edgeScene = scene({ transform: "translate(-105 0)" });
+  const odd = await decodeRgb(sharp, await render(edgeScene, 601, 400));
+  const op = planHdUpscale(601, 400);
+  const r = await hdDetailTransfer(sharp, odd, await render(edgeScene, op.shape.w, op.shape.h), op);
+  const oddUp = await resizeRgb(odd, op.work.width, op.work.height);
+  const edge = meanAbs(r, oddUp, { x: 0, y: 170, w: 10, h: 250 });
+  const inner = meanAbs(r, oddUp, { x: 40, y: 170, w: 10, h: 250 });
+  ck("detail reaches the photo's real edge when the crop touches it", edge > inner * 0.6,
+    `edge ${edge.toFixed(2)} vs inside ${inner.toFixed(2)}`);
+}
+{
+  /* Found in review: the alignment ran for up to a second without yielding,
+     stalling every other request on the server. */
+  let worst = 0, last = Date.now();
+  const tick = setInterval(() => { const now = Date.now(); worst = Math.max(worst, now - last); last = now; }, 1);
+  await run(scene());
+  clearInterval(tick);
+  ck("the rebuild never holds the event loop for long", worst < 250, `longest stall ${worst} ms`);
 }
 {
   const other = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${SW}" height="${SH}"><rect width="${SW}" height="${SH}" fill="#345"/><circle cx="450" cy="350" r="250" fill="#c33"/><text x="150" y="900" font-size="150" fill="#fff">SOMETHING ELSE</text></svg>`);
@@ -315,7 +366,9 @@ console.log("\nThe route and the button");
     client.indexOf("imageOnPage(owner) !== img") > 0
     && client.indexOf("imageOnPage(owner) !== img") < client.indexOf('commitFieldToPage(owner, "mainImage", out)'));
   ck("the focal point carries over instead of being guessed again", /out\.__focalPoint = \{/.test(client));
-  ck("the undo slot is taken before the request", client.indexOf("rememberImageBeforeAI(owner, img)") < client.indexOf("fetch("));
+  ck("the undo slot is taken only once a result is confirmed for this page",
+    client.indexOf("rememberImageBeforeAI(owner, img)") > client.indexOf("imageOnPage(owner) !== img")
+    && client.indexOf("rememberImageBeforeAI(owner, img)") < client.indexOf('commitFieldToPage(owner, "mainImage", out)'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
