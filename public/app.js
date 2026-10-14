@@ -1300,21 +1300,6 @@ function imageJobFor(page) {
   return page ? imageJobs.get(page.id) || null : null;
 }
 
-/* Reframe is a paid full redraw, so each page gets two. Counted on success
-   only, per post AND page: page ids restart at page-1 on every reload, so a
-   count keyed by id alone followed the writer from one post's first story
-   slide to the next one's. The server keys its copy of the cap the same way,
-   so the number on the button is the number it enforces. */
-const REFRAME_LIMIT_PER_PIX = 2;
-const reframeUses = new Map();
-function reframeKey(page, pixId = state.pixId) {
-  return `${pixId || ""}|${page.id}`;
-}
-function reframesLeft(page) {
-  if (!page) return 0;
-  return Math.max(0, REFRAME_LIMIT_PER_PIX - (reframeUses.get(reframeKey(page)) || 0));
-}
-
 /* The status line under the buttons, for one page. A job reports to the page
    it was pressed on; the line only shows it while that page is selected, and
    shows it again when the writer comes back to it. */
@@ -1350,13 +1335,6 @@ function syncImageAIUI() {
     if (!btn) continue;
     btn.classList.toggle("working", job === kind);
     btn.disabled = !hasImage || Boolean(job);
-  }
-  const reframeBtn = document.getElementById("ai-reframe-btn");
-  if (reframeBtn) {
-    const left = reframesLeft(page);
-    const label = reframeBtn.querySelector(".reframe-label");
-    if (label) label.textContent = left > 0 ? `Reframe (${left} left)` : "Reframe (limit reached)";
-    if (left <= 0 && job !== "reframe") reframeBtn.disabled = true;
   }
   const undoBtn = document.getElementById("image-undo-btn");
   if (undoBtn) undoBtn.disabled = Boolean(job) || !canUndoImage(page);
@@ -11169,11 +11147,6 @@ async function runImageAI(modeOverride) {
     job: requestedMode, error, page: enhanceOwner, pixId: pixIdAtPress,
   });
   let sentPaidCall = false;
-  if (requestedMode === "reframe" && reframesLeft(enhanceOwner) <= 0) {
-    say(`Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`);
-    reportPress("limit", `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`);
-    return;
-  }
   /* Reframe redraws from the writer's own photo whenever an earlier AI result
      is on the page. A redraw of a redraw drifts further from the real faces
      each time: a 252px thumbnail upscaled and then reframed came back as two
@@ -11542,10 +11515,6 @@ async function runImageAI(modeOverride) {
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw enhanceError(data, resp.status);
     if (!data.image) throw new Error("No image returned.");
-    if (requestedMode === "reframe" && enhanceOwner) {
-      const key = reframeKey(enhanceOwner, pixIdAtPress);
-      reframeUses.set(key, (reframeUses.get(key) || 0) + 1);
-    }
 
     /* A second round trip, and a cheap one: the answer above carried an
        address, not the picture. A failure here costs nothing and can be
@@ -11819,19 +11788,42 @@ async function runFreeUpscale() {
 document.getElementById("free-upscale-btn")?.addEventListener("click", () => runFreeUpscale());
 
 /* HD Upscale, through /api/hd-upscale — the paid upscale button (it replaced
-   AI Upscale). The server runs the gpt-image-1.5 restore (~$0.12) when the
-   photo is under MODEL_CEILING_PX, then a free 2x lanczos + sharpen to
-   ~3072px. Same page, same zoom and pan, and Undo AI Enhance reverts it. */
+   AI Upscale). The whole photograph goes up at its own size: no crop, no
+   shrink. The server decides whether gpt-image can add resolution (~$0.12),
+   then rebuilds the result on the photo's OWN pixels — faces, shapes and
+   colour from the original, only finer detail from the model, and only where
+   the model agrees with the photograph — and enlarges it to ~3072px. See
+   lib/hd-upscale.js. Same page, same zoom and pan, and Undo AI Enhance
+   reverts it.
+
+   It works on the picture on the page, unlike Reframe, which goes back to the
+   writer's original. Reframe redraws, and a redraw of a redraw drifts; HD
+   keeps the structure of whatever it is given, so a reframed picture pressed
+   to HD comes back as that reframe, larger — which is what was asked for. */
 
 /* A photo this small has faces only a few dozen pixels wide, and the AI
    invents them rather than restoring them. Nothing is refused for it — the
-   reviewer decides — but the result says so, so a face that no longer
+   reviewer decides — but Reframe's result says so, so a face that no longer
    matches is not a surprise. */
 const AI_SMALL_PHOTO_EDGE = 700;
 function smallPhotoNote(w, h) {
   return Math.max(w, h) < AI_SMALL_PHOTO_EDGE
     ? ` Small photo (${w}x${h}): faces may not match the original — a larger copy gives a better result.`
     : "";
+}
+
+/* The server's test, for the status line only: the model has to return at
+   least this many times the pixels it is shown (HD_AI_MIN_GAIN in
+   server.mjs). Above that line HD is a free enlarge. */
+const HD_AI_MIN_GAIN = 1.3;
+const HD_LONG_EDGE = 3072;
+const HD_MIN_ENLARGE = 1.25;   // within a quarter of HD it is "Already HD"
+function hdUsesAI(w, h) {
+  if (!(w > 0 && h > 0) || HD_LONG_EDGE / Math.max(w, h) < HD_MIN_ENLARGE) return false;
+  const shape = nearestModelShape(w / h);
+  const shownW = w / h > shape ? h * shape : w;
+  const modelW = shape > 1 ? 1536 : 1024;
+  return modelW / shownW >= HD_AI_MIN_GAIN;
 }
 
 async function runHdUpscale() {
@@ -11842,38 +11834,29 @@ async function runHdUpscale() {
   const pixIdAtPress = state.pixId || "";
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
-  const longEdge = Math.max(w, h);
-  // The same test the server makes: below the model's ceiling the restore runs.
-  const aiPath = longEdge < MODEL_CEILING_PX;
+  const aiPath = hdUsesAI(w, h);
   // Once the upload is sent the server records the press, however it ends.
   let sent = false;
+  rememberImageBeforeAI(owner, img);
   imageJobs.set(owner.id, "hd_upscale");
   say(aiPath
-    ? "HD Upscale — restoring with ChatGPT (gpt-image-1.5), then enlarging to HD. This can take up to a minute…"
-    : "HD Upscale — already larger than the AI returns, so enlarging and sharpening only (free)…");
+    ? "HD Upscale — OpenAI is sharpening the photo; faces and colours are kept from your original. This can take up to a minute…"
+    : "HD Upscale — enlarging and sharpening on our server (free — no AI needed at this size)…");
   syncImageAIUI();
   try {
-    /* On the AI path the upload matches AI Upscale's: cropped to the nearest
-       shape gpt-image can return (or it invents the difference — the extra
-       sky), and capped at RESTORE_UPLOAD_PX, because the upload is billed by
-       its size. Otherwise the photo goes whole, for the free enlarge alone. */
-    let sx = 0, sy = 0, sw = w, sh = h, scale = 1;
-    if (aiPath) {
-      const target = nearestModelShape(w / h);
-      if (w / h > target) { sw = h * target; sx = (w - sw) / 2; }
-      else if (w / h < target) { sh = w / target; sy = (h - sh) / 2; }
-      scale = Math.min(1, RESTORE_UPLOAD_PX / Math.max(sw, sh));
-    }
+    // The whole photograph at its own size. The server shows the model only
+    // what it can use, and builds the result from these pixels.
     const c = document.createElement("canvas");
-    c.width = Math.round(sw * scale);
-    c.height = Math.round(sh * scale);
-    c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    c.width = w;
+    c.height = h;
+    c.getContext("2d").drawImage(img, 0, 0, w, h);
     const upload = await upscaleUploadBlob(c);
     const form = new FormData();
-    form.append("width", String(c.width));
-    form.append("height", String(c.height));
+    form.append("width", String(w));
+    form.append("height", String(h));
     form.append("pixId", pixIdAtPress);
     form.append("pageId", owner?.id || "");
+    // For the AI Usage audit only; the model is never shown the headline.
     form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
     form.append("image", upload.blob, upload.name);
     sent = true;
@@ -11893,20 +11876,32 @@ async function runHdUpscale() {
       out.onerror = () => reject(new Error("Upscaled image failed to load."));
       out.src = src;
     });
-    rememberImageBeforeAI(owner, img);
+    // A minute is long enough for the writer to have put another picture on
+    // this page. Theirs wins; the result is dropped rather than pasted over it.
+    if (imageOnPage(owner) !== img) {
+      say("HD Upscale finished, but the picture on this page was changed meanwhile, so the result was not applied.");
+      return;
+    }
     noteAIImage(owner, out);
+    // The same frame, only larger, so the focal point carries over rather than
+    // being guessed again — a re-detection can pick a different face.
+    if (img.__focalPoint) {
+      out.__focalPoint = {
+        x: img.__focalPoint.x * out.naturalWidth / w,
+        y: img.__focalPoint.y * out.naturalHeight / h,
+      };
+    }
     await ensureImageFocalPoint(out);
     commitFieldToPage(owner, "mainImage", out);
     renderPoster();
     const billed = !data.ai ? " — no AI cost"
-      : data.cached ? " (restore from cache, no charge)"
+      : data.cached ? " (OpenAI restore from cache, no charge)"
       : (data.cost ? ` — $${data.cost.usd.toFixed(3)}` : "");
-    const note = data.enlarged === false ? " The enlarge step is unavailable on this server, so this is the restore alone." : "";
-    say(
-      `✓ HD Upscale done — ${w}x${h} → ${out.naturalWidth}x${out.naturalHeight} via ${data.engine || "gpt-image-1.5"}${billed}.${note}` +
-      (data.ai ? smallPhotoNote(w, h) : ""),
-      "success",
-    );
+    const how = !data.ai ? "enlarged and sharpened on our server"
+      : data.detail?.failed ? "the OpenAI detail could not be applied, so this is a clean enlargement of your original"
+      : data.detail?.rejected ? "OpenAI changed the picture too much to use, so this is a clean enlargement of your original"
+      : `OpenAI detail used on ${Math.round((data.detail?.share ?? 0) * 100)}% of the photo; faces and colours kept from your original`;
+    say(`✓ HD Upscale done — ${w}x${h} → ${out.naturalWidth}x${out.naturalHeight}: ${how}${billed}.`, "success");
   } catch (err) {
     // A safety refusal is an answer, not a fault.
     if (err.moderated) say(err.message, "success");

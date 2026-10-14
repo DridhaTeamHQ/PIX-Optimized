@@ -432,43 +432,86 @@ longer diverts to anything, because there is nothing left to divert to.
 
 ### 2.12 HD Upscale — the paid upscale button
 
-`POST /api/hd-upscale` — reviewer only, the **HD Upscale** button. It **replaced the AI
-Upscale button** (2026-10-13): that button ran the same restore and stopped at 1536px. The
-plan/edit route in §2.1–2.11 still serves Reframe, and its Job selector is hidden. gpt-image-1.5
-cannot return more than 1536px (§2.4), so the resolution comes from a second, free step:
+`POST /api/hd-upscale` — reviewer only, the **HD Upscale** button. It replaced the AI Upscale
+button (2026-10-13). The plan/edit route in §2.1–2.11 still serves Reframe, and its Job selector
+is hidden. Image work: `lib/hd-upscale.js`. Tests: `test/hd-upscale.mjs`.
 
-1. **Restore** — exactly what AI Upscale runs: `runEnhanceEdit` with `mode: "restore"`,
-   gpt-image-1.5 at `IMAGE_QUALITY` (medium), the same prompt, result cache, hourly cap
-   (`ENHANCE_RATE_MAX`, shared) and spend guard. Measured at **$0.11–0.14** a press (input fidelity bills the upload too), the same as AI Upscale. Only run when the source's
-   long edge is under 1536px; above that the model would be handed a shrunk copy and could
-   only lose detail, so a larger source skips straight to step 2 and costs nothing.
-2. **Enlarge** — `upscaleLocally`: ffmpeg lanczos + unsharp/CAS, 2x, to
-   `HD_UPSCALE_LONG_EDGE` (3072), JPEG at `-q:v 2`. Free, about a second. Needs ffmpeg,
-   which the Docker image installs. Without it the paid restore is still returned, at 1536.
+**It never uses the model's picture as the result.** gpt-image-1.5 cannot copy a photograph:
+`images/edits` draws every pixel again, and `input_fidelity: high` narrows the drift without
+closing it. Until 2026-10-14 HD Upscale returned that redraw, enlarged, and reviewers reported
+faces that changed and quality that dropped. Measured on four real news photos, the raw restore
+shrunk back to the source's size sat **23–26 dB** from the original: different jaws and smiles,
+a boy returned as a different boy, patch lettering turned to gibberish, a colour cast changed.
+Three things caused it:
 
-Step 2 enlarges and sharpens what step 1 drew; it does not invent new detail. A source
-already at about 3072px is not sent (`skipped`, no charge).
+- the redraw itself;
+- the browser cropped the photo to a gpt-image shape and **shrank it to 1024px** before upload,
+  so the model invented more of each face than it was shown;
+- the enlarge after it ran `hqdn3d` (skin to wax) and then unsharp + CAS (halos).
 
-On the paid path the browser uploads what AI Upscale did: cropped to the nearest shape
-gpt-image returns (`nearestModelShape`, or the model invents the difference) and capped at
-`RESTORE_UPLOAD_PX` (1024), since the upload is billed by its size.
+Now the whole photograph goes up at its own size, with no crop and no shrink, and:
 
-**Small photos are not refused.** Under 700px on the long edge the result carries a note
-that faces may not match. That is a real limit, not a cautious one: a 252×168 thumbnail of a
-couple went through AI Upscale and then Reframe and came back as two different people in
-the same clothes, because a 30px face gives the model nothing to keep. The reviewer decides.
+1. **Plan** (`planHdUpscale`). The model only runs where it can add real resolution: its answer
+   (1536 or 1024 on the long side) must be at least `HD_AI_MIN_GAIN` (1.3) times the pixels it is
+   shown. For a 3:2 photo that is a long edge up to ~1180px, and for a square ~790px. Above
+   that line a press is a free enlarge. A photo within a quarter of `HD_UPSCALE_LONG_EDGE` is
+   *Already HD* and is skipped. The model is shown the largest centred crop of the nearest
+   gpt-image shape, at native pixels (`cropForModel`). That crop is only what the model sees.
+   The result is always the whole frame.
+2. **Restore.** The same paid call as before (`runEnhanceEdit`, quality medium, the result cache,
+   the hourly cap and the spend guard), with its own short prompt, `buildHdRestorePrompt`. The
+   restore prompt's "visible pores… higher-end camera" lines were instructions to invent a face.
+   Measured at **$0.115–0.118** a press.
+3. **Rebuild on the original** (`hdDetailTransfer`):
+   - **Align.** A coarse-to-fine NCC search over scale and shift (~160px, ~512px, then full
+     size to a quarter pixel) registers the restore to the original.
+   - **Split at the original's resolution.** Everything the original resolves (faces, shapes,
+     colour, tone) comes from the original, lanczos-enlarged. From the model the rebuild takes
+     only luminance detail finer than the original could record. No colour comes from the model.
+   - **Gate.** Where the model's band-limited structure disagrees with the original's (a moved
+     eye, a different mouth, rewritten lettering), its detail is switched off and the original
+     stands. The model's contrast is matched by one global slope first, clamped to 0.8–1.25 for
+     the comparison. The slope only ever *damps* the detail (`hdDetailScale`): the original's own
+     grain drags the slope to 0.6–0.7 on real photos, and dividing by it oversharpened by half.
+   - **Reject.** If the ~512px structure NCC is under 0.55, the model returned some other
+     picture and none of it is used. Do not judge this at full size: there the comparison is
+     between a soft enlargement and the model's invented texture, and faithful answers read
+     0.3–0.5. The real photos read 0.72–0.89 at 512px, and an unrelated picture reads under 0.1.
+   - Outside the model's crop the result is the original enlarged, with the detail feathered
+     out over 3% of the crop's short side.
+4. **Finish** (`hdFinish`). Lanczos to at most 2x and at most `HD_UPSCALE_LONG_EDGE` (3072), a
+   light sharpen (sharp `sigma 0.7, m2 0.7` after a rebuild, `1 / 1.1` for a plain enlarge), and
+   JPEG q93 at **4:4:4**, because 4:2:0 halves colour resolution and smears lips and skin edges.
+   No denoise. Everything after the restore runs on sharp, so a server without it refuses before
+   anything is billed.
 
-**Reframe redraws from the writer's original** whenever an earlier AI result is on the page
-(`imageUndoEntry`), so two redraws never stack on the same faces.
+**The property that keeps faces:** shrunk back to its own size, the result *is* the original,
+to within the resampling. On the same four photos it measured **31–39 dB**, against 23–26 dB for
+the raw restore. `test/hd-upscale.mjs` holds the property down on a scene whose true
+high-resolution version is known. A face the fake model redrew (eyes moved, mouth turned) comes
+back as the original's face, while the rest of the frame still gains detail.
 
-gpt-image-2, which draws up to 3824px natively, was tried for this button and measured at
-**$0.48** a press (768×512 → 3520×2336, quality high) — about ten times this route — and
-declined on cost.
+**What it does not do.** It cannot recover detail the model only invented. At high gain (a
+600px photo is 2.56x) the added sharpness is texture consistent with the original, not a
+recovered capture. Small faces stay as soft as the original resolves them, which is the price of
+not redrawing them. Skin can pick up a little of the model's texture, about a third of the
+model's own fine-texture energy on the photos measured. A local "is this flat?" weighting was
+tried to suppress it, but it could not tell grain in the original from invented texture and only
+cut detail elsewhere, so it was dropped.
+
+The rebuild takes 3–6 s of server CPU per press, much of it JavaScript on the event loop, on top
+of the 20–25 s restore. The status line reports how much of the photo took the model's detail,
+or that the model's answer was rejected and the result is a clean enlargement of the original.
 
 | | |
 |---|---|
-| audit | `hd_upscale` in `pix_image_actions`, `job: restore` when step 1 ran, with a column on the AI Usage page |
-| delivery | the same `/api/enhance-result/<uuid>` address as AI Upscale, now carrying its own content type |
+| browser | `runHdUpscale` sends the page's current picture whole. It does not go back to the writer's original as Reframe does: HD keeps the structure of whatever it is given, so a reframe pressed to HD comes back as that reframe, larger. A result is not applied if the picture on the page changed while the job ran. The focal point is scaled across rather than detected again |
+| audit | `hd_upscale` in `pix_image_actions`, `job: restore` when step 2 ran, `job: null` for a free enlarge |
+| delivery | the same `/api/enhance-result/<uuid>` address as AI Upscale, carrying `image/jpeg` |
+
+gpt-image-2, which draws up to 3824px natively, was tried for this button and measured at
+**$0.48** a press (768×512 → 3520×2336, quality high). That is about four times this route, and
+it is still a redraw. It was declined.
 
 ---
 
@@ -822,7 +865,8 @@ Current cost: ~5ms median per render, 0 dropped frames while typing.
 | `DISABLE_GPT_IMAGE` | unset | `true` switches the route off and returns 503 |
 | `PEXELS_API_KEY` | — | Stock images; source skipped silently when unset |
 | `FAL_KEY` | — | Flux generation |
-| `HD_UPSCALE_LONG_EDGE` | `3072` | Long edge HD Upscale enlarges to (at most 2x the restore) |
+| `HD_UPSCALE_LONG_EDGE` | `3072` | Long edge HD Upscale enlarges to (at most 2x). Within a quarter of it a photo is *Already HD* — §2.12 |
+| `HD_AI_MIN_GAIN` | `1.3` | HD Upscale pays for the restore only when the model returns at least this many times the pixels it is shown — §2.12 |
 
 ---
 
@@ -837,6 +881,7 @@ node test/render.mjs      # render coalescing, and that export stays synchronous
 node test/highlight-tones.mjs # which bracket paints which accent colour
 node test/enhance-params.mjs # cache identity, and the output shape the plan asks for
 node test/expand-frame.mjs # expand placement, mask, paste-back, and the card crop
+node test/hd-upscale.mjs   # HD Upscale: plan, alignment, the rebuild keeps the original's faces, the file
 ```
 
 They execute the real functions pulled out of `public/app.js` rather than

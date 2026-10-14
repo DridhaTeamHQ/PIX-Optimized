@@ -36,6 +36,7 @@ import {
   clearPreviewKeys, expiredPreviewRows, getImageActionReport, recordImageAction,
 } from "./lib/image-actions.js";
 import { imageSize } from "./lib/image-size.js";
+import { planHdUpscale, decodeRgb, cropForModel, hdDetailTransfer, hdFinish } from "./lib/hd-upscale.js";
 import { copyCardsToWeb } from "./lib/web-cards.js";
 import {
   fetchDailyMattrMeta, getDailyMattrConfig, publishDailyMattrBuzzContent,
@@ -385,7 +386,7 @@ const PUBLIC_API_ROUTES = new Set([
    by habit, by a stale tab, or by curl — is refused. */
 const REVIEWER_ONLY_API_ROUTES = new Set([
   "/api/upscale-image",
-  // HD Upscale runs the same paid gpt-image-1.5 restore as AI Upscale.
+  // HD Upscale pays for a gpt-image-1.5 restore on smaller photos.
   "/api/hd-upscale",
 ]);
 
@@ -4665,6 +4666,27 @@ function buildEnhancePrompt(description, _headlineNotUsed, _ratioNoLongerUsed) {
   ].filter(Boolean).join("\n");
 }
 
+/* HD Upscale's restore. Short, and it asks for nothing new.
+
+   The answer is not used as the picture: lib/hd-upscale.js aligns it to the
+   original and takes only the detail finer than the original could record,
+   wherever it agrees with the original. So the prompt has two jobs and no
+   others — keep everything exactly where it is, which is what lets the
+   alignment and the agreement test pass, and render real fine detail. The
+   restore prompt above asks for "visible pores" and "a higher-end camera",
+   which on a face a few dozen pixels wide is an instruction to invent one. */
+function buildHdRestorePrompt() {
+  return [
+    "Restore this exact photograph at a higher resolution.",
+    "It is the same photograph, not a new one: keep the framing, every person's",
+    "face, expression and pose, every object, all text, signs and logos, the",
+    "lighting and the colours exactly where and as they are.",
+    "Only remove blur, noise and JPEG compression artefacts, and render the fine",
+    "detail that is already there more sharply.",
+    "Do not add, remove, move, redraw, retouch or beautify anything.",
+  ].join("\n");
+}
+
 /* ── Expand: the same photograph, taken from further back ──
    This is the job the restore prompt above spends its whole length forbidding,
    and the two must never be run through one another. Restore says "do not
@@ -5725,6 +5747,9 @@ async function runEnhanceEdit({
   // Called once, only when OpenAI was actually paid. A cache hit returns
   // before this and so never consumes the caller's hourly allowance.
   onCharge = null,
+  // A restore with its own instructions — HD Upscale's. In the cache key,
+  // like every prompt.
+  restorePrompt = "",
 }) {
   /* MEDIUM, deliberately. This is the setting that decides both what a face
      comes back looking like and what the call costs.
@@ -5790,7 +5815,7 @@ async function runEnhanceEdit({
   const prompt =
     job === "reframe" ? buildReframePrompt(description, posterRatio, subject)
     : job === "expand" ? buildExpandPrompt(description, posterRatio, amount, subject, composited)
-    : buildEnhancePrompt(description, headline, posterRatio);
+    : restorePrompt || buildEnhancePrompt(description, headline, posterRatio);
   const cacheKey = enhanceCacheKey(buffer, mask?.buffer ?? null, {
     job, amount: job === "expand" ? amount : null, subject,
     description, headline, posterRatio, size, quality, composited, prompt,
@@ -6282,10 +6307,6 @@ async function enhanceSpendGate(req, res) {
    caller is handing back, and runs it. Nothing is decided here — a field that
    does not parse falls to the conservative value rather than to a 400, for
    the same reason the mode header does. */
-const REFRAME_LIMIT_PER_PIX = Number(process.env.REFRAME_LIMIT_PER_PIX) || 2;
-// In memory: resets on redeploy, which is fine for a per-page cap.
-const reframeCounts = new Map();
-
 async function handleEnhanceEditStage(req, res) {
   const t0 = Date.now();
   let read;
@@ -6322,35 +6343,17 @@ async function handleEnhanceEditStage(req, res) {
     return;
   }
 
-  /* Reframe is the costly job: two per page (each story slide its own), per
-     user. Keyed by post as well as page: the editor's page ids restart at
-     page-1 on every load, so a key without the post let one story's slide 1
-     spend the next story's slide 1. Checked before the spend gate so a
-     refused press reserves nothing. */
-  const isReframe = String(fields.mode || "").toLowerCase() === "reframe";
-  let reframeKey = null;
-  if (isReframe) {
-    const user = await currentUser(req);
-    const who = user?.username ? `u:${user.username}` : `ip:${clientKey(req)}`;
-    reframeKey = `${who}|${audit.pixId || ""}|${audit.pageId || ""}`;
-    if ((reframeCounts.get(reframeKey) || 0) >= REFRAME_LIMIT_PER_PIX) {
-      const error = `Reframe limit reached — ${REFRAME_LIMIT_PER_PIX} per page.`;
-      sendJson(res, 429, { error });
-      logImageAction(req, { ...audit, outcome: "limit", error }, { before: image });
-      return;
-    }
-  }
-
+  /* No per-page Reframe cap. There was one — two per page — while a Reframe
+     ran at quality high (~$0.33). At medium it measures ~$0.12, the same as
+     HD Upscale, and the reviewers asked for it to go (2026-10-14). The hourly
+     per-user cap and the spend guard in enhanceSpendGate still bound it. */
   const gateCharge = await enhanceSpendGate(req, res);
   if (!gateCharge) {
     // enhanceSpendGate has already answered with which limit it was.
     logImageAction(req, { ...audit, outcome: "limit", error: "Hourly or spend limit reached." }, { before: image });
     return;
   }
-  const onCharge = (usd) => {
-    if (reframeKey) reframeCounts.set(reframeKey, (reframeCounts.get(reframeKey) || 0) + 1);
-    return gateCharge(usd);
-  };
+  const onCharge = gateCharge;
   const rawSize = String(fields.size || "auto");
   const rawAmount = String(fields.amount || "moderate").toLowerCase();
   const rawSubject = String(fields.subject || "people").toLowerCase();
@@ -6536,7 +6539,8 @@ function enlargeFactor(w, h, maxLongEdge) {
    Docker image but not on a developer's machine, where Free Upscale and HD
    Upscale used to answer "needs ffmpeg". Lanczos3 is the same kernel; the
    sharpen approximates the unsharp + CAS chain (flat areas barely touched,
-   edges lifted). Loaded lazily so a missing install is a null, not a crash. */
+   edges lifted). Loaded lazily so a missing install is a null, not a crash.
+   HD Upscale's rebuild (lib/hd-upscale.js) runs entirely on it. */
 let sharpLib;
 async function loadSharp() {
   if (sharpLib === undefined) {
@@ -6574,8 +6578,9 @@ async function upscaleWithSharp(buffer, { maxLongEdge, jpeg }) {
   }
 }
 
-/* `maxLongEdge` and `jpeg` are for HD Upscale, which enlarges a 1536px
-   gpt-image return to ~3072 and needs it small enough to carry. */
+/* `maxLongEdge` and `jpeg` were HD Upscale's, when it enlarged a 1536px
+   gpt-image return here. HD now finishes through lib/hd-upscale.js without
+   the denoise; Free Upscale uses the defaults. */
 async function upscaleLocally(buffer, mime, { maxLongEdge = UPSCALE_MAX_LONG_EDGE, jpeg = false } = {}) {
   if (!ffmpegAvailable) return upscaleWithSharp(buffer, { maxLongEdge, jpeg });
 
@@ -6739,23 +6744,33 @@ async function handleFreeUpscale(req, res) {
   }
 }
 
-/* ── HD Upscale: gpt-image-1.5 restore, then a free 2x enlarge ─────────────
-   The answer to "AI Upscale is not HD", at AI Upscale's price. gpt-image-1.5
-   stops at 1536px on the long edge (§2.4 of IMAGES.md), so the resolution has
-   to come from somewhere else — and paying gpt-image-2 ~$0.48 a press to draw
-   4K natively was judged too expensive. So this is two steps:
+/* ── HD Upscale: OpenAI detail on the writer's own pixels ──────────────────
+   It used to be gpt-image-1.5's restore, used as the picture and enlarged 2x.
+   That changed faces — images/edits redraws every pixel, and
+   input_fidelity=high narrows the drift without closing it — and it lowered
+   quality: the browser cropped the photo to a model shape and shrank it to
+   1024px before the model saw it, and the enlarge denoised skin to wax and
+   sharpened the model's edges into halos.
 
-     1. the same restore AI Upscale runs: gpt-image-1.5, quality medium, the
-        same prompt, cache, hourly cap and spend guard (~$0.12 measured). It recovers
-        the detail. Only run when the source is under 1536px — above that the
-        model would be handed a shrunk copy and could only lose detail.
-     2. ffmpeg's lanczos + unsharp/CAS chain (upscaleLocally) takes that
-        result 2x, to HD_UPSCALE_LONG_EDGE (3072). Free, about a second.
+   Now the whole photograph comes up at its own size, and:
 
-   Step 2 enlarges and sharpens what step 1 drew; it does not invent detail.
-   The result is a JPEG: the same picture as PNG at 3072px is ~15 MB. */
+     1. If the model can add real resolution — its answer is at least
+        HD_AI_MIN_GAIN times the pixels it is shown — the part of the photo
+        that fits a gpt-image shape goes to the same paid restore (cache,
+        hourly cap and spend guard included) with buildHdRestorePrompt().
+     2. lib/hd-upscale.js rebuilds the picture from the ORIGINAL: aligned to
+        the model's answer, it keeps everything the original resolves (faces,
+        shapes, colour) and adds only the model's finer detail, and only
+        where the model agrees with the photograph. Shrunk back, the result
+        is the original. Outside the model's crop it is the original enlarged.
+     3. Lanczos to HD_UPSCALE_LONG_EDGE (at most 2x), a light sharpen, and a
+        4:4:4 JPEG — a 3072px PNG runs ~15 MB. No denoise.
+
+   Above the gain line (a 1400px photo would come back 1.1x larger) nothing is
+   paid for: step 3 alone, on our CPU. Everything after the restore is sharp,
+   so a server without it refuses before anything is spent. */
 const HD_UPSCALE_LONG_EDGE = Number(env("HD_UPSCALE_LONG_EDGE") || 3072);
-const HD_AI_MAX_EDGE = 1536;
+const HD_AI_MIN_GAIN = Number(env("HD_AI_MIN_GAIN") || 1.3);
 
 async function handleHdUpscale(req, res) {
   const t0 = Date.now();
@@ -6765,13 +6780,32 @@ async function handleHdUpscale(req, res) {
     const read = await readEnhanceEdit(req);
     image = read.image;
     const fields = read.fields || {};
-    const src = imageSize(image.buffer);
-    const width = src?.width || Number(fields.width) || 0;
-    const height = src?.height || Number(fields.height) || 0;
-    const longEdge = Math.max(width, height);
-    audit = { ...audit, ...auditFields(fields), sourceW: width, sourceH: height };
+    audit = { ...audit, ...auditFields(fields) };
 
-    if (longEdge >= HD_UPSCALE_LONG_EDGE * 0.95) {
+    const sharp = await loadSharp();
+    if (!sharp) {
+      const error = "HD Upscale needs sharp on the server. Run npm install.";
+      sendJson(res, 503, { error });
+      logImageAction(req, { ...audit, job: null, outcome: "failed", error, durationMs: Date.now() - t0 }, { before: image });
+      return;
+    }
+    // The header first: a photo that is already HD is answered without
+    // decoding 70 MB of pixels to find that out.
+    const meta = await sharp(image.buffer).metadata();
+    const turned = (meta.orientation || 1) >= 5;
+    const hint = planHdUpscale(turned ? meta.height : meta.width, turned ? meta.width : meta.height,
+      { longEdge: HD_UPSCALE_LONG_EDGE, minGain: HD_AI_MIN_GAIN });
+    // Then decoded once, orientation applied: the plan, the model's crop and
+    // the rebuild all read these same pixels.
+    const original = hint?.skip ? null : await decodeRgb(sharp, image.buffer);
+    const width = original?.width ?? hint?.width ?? 0;
+    const height = original?.height ?? hint?.height ?? 0;
+    audit = { ...audit, sourceW: width, sourceH: height };
+
+    const plan = original
+      ? planHdUpscale(width, height, { longEdge: HD_UPSCALE_LONG_EDGE, minGain: HD_AI_MIN_GAIN })
+      : hint;
+    if (!plan || plan.skip) {
       sendJson(res, 200, { skipped: true, width, height });
       logImageAction(req, {
         ...audit, job: null, outcome: "skipped", costUsd: 0, durationMs: Date.now() - t0,
@@ -6781,9 +6815,8 @@ async function handleHdUpscale(req, res) {
     }
 
     // Step 1 — the paid restore, only where the model can add pixels.
-    let restored = image;
     let payload = null;
-    if (longEdge && longEdge < HD_AI_MAX_EDGE) {
+    if (plan.ai) {
       const blocked = enhanceBlocked();
       if (blocked) {
         sendJson(res, blocked.status, { error: blocked.error });
@@ -6797,57 +6830,60 @@ async function handleHdUpscale(req, res) {
         return;
       }
       payload = await runEnhanceEdit({
-        buffer: image.buffer,
-        mime: enhanceMime(image.mime),
+        buffer: await cropForModel(sharp, original, plan.crop),
+        mime: "image/png",
         mode: "restore",
-        size: sizeForRatio("", width >= height ? "landscape" : "portrait", width, height),
-        headline: decodeURIComponent(String(fields.headline || "")).slice(0, 200),
+        size: plan.size,
+        restorePrompt: buildHdRestorePrompt(),
         decidedBy: "hd-upscale",
         onCharge: gateCharge,
       });
-      restored = enhanceResultImage(payload.image);
-      if (!restored) throw new Error("The restored picture could not be read back. Press HD Upscale again.");
     } else {
       audit.job = null;
     }
 
-    // Step 2 — the free enlarge.
-    const big = await upscaleLocally(restored.buffer, restored.mime, {
-      maxLongEdge: HD_UPSCALE_LONG_EDGE, jpeg: true,
-    });
-    const costUsd = payload ? (payload.cached ? 0 : (payload.cost?.usd ?? null)) : 0;
-    if (!big) {
-      if (!payload) {
-        const error = (ffmpegAvailable || await loadSharp())
-          ? "The image could not be enlarged. Check the server log for the error."
-          : "HD Upscale needs ffmpeg or sharp on the server. Run npm install.";
-        sendJson(res, 503, { error });
-        logImageAction(req, { ...audit, outcome: "failed", error, durationMs: Date.now() - t0 }, { before: image });
-        return;
+    // Step 2 — the rebuild on the original's pixels. The restore was paid for
+    // by now, so a fault here still answers with the clean enlarge, and the
+    // restore stays cached for an hour: pressing again costs nothing.
+    let picture = original;
+    let detail = null;
+    if (payload) {
+      const t1 = Date.now();
+      try {
+        const restored = enhanceResultImage(payload.image);
+        if (!restored) throw new Error("the restored picture could not be read back");
+        const rebuilt = await hdDetailTransfer(sharp, original, restored.buffer, plan);
+        picture = rebuilt;
+        detail = { share: rebuilt.stats.detailShare, rejected: rebuilt.stats.rejected };
+        console.log(`  HD rebuild on the original in ${Date.now() - t1}ms — ${JSON.stringify(rebuilt.stats)}`);
+      } catch (err) {
+        console.error("✗ HD rebuild failed — returning the clean enlarge:", err);
+        detail = { share: 0, rejected: true, failed: true };
       }
-      // The restore was paid for; hand it back at 1536 rather than throw it away.
-      console.warn("⚠ HD upscale: enlarge step unavailable — returning the 1536px restore");
-      sendJson(res, 200, { ...payload, ai: true, enlarged: false });
-      logImageAction(req, {
-        ...audit, outcome: "success", engine: payload.engine, costUsd, cached: Boolean(payload.cached),
-        durationMs: Date.now() - t0,
-      }, { before: image, after: restored });
-      return;
     }
 
-    const got = imageSize(big.buffer);
-    const engine = payload ? `${payload.engine} + ${big.engine}` : big.engine;
+    // Step 3 — the enlarge.
+    const target = picture === original ? hdTargetFor(original) : plan.target;
+    const jpeg = await hdFinish(sharp, picture, target, { detail: Boolean(detail && !detail.rejected) });
+    const got = imageSize(jpeg);
+    const costUsd = payload ? (payload.cached ? 0 : (payload.cost?.usd ?? null)) : 0;
+    const engine = payload
+      ? `${payload.engine} detail on the original + lanczos`
+      : "lanczos + light sharpen";
     console.log(
       `✓ HD upscale ${width}x${height} → ${got?.width}x${got?.height} via ${engine} in ${Date.now() - t0}ms` +
-      (payload ? (payload.cached ? " (restore from cache, no charge)" : payload.cost ? ` — $${payload.cost.usd.toFixed(4)}` : "") : " — no AI, no cost"),
+      (payload
+        ? (payload.cached ? " (restore from cache, no charge)" : payload.cost ? ` — $${payload.cost.usd.toFixed(4)}` : "")
+        : " — no AI, no cost"),
     );
     sendJson(res, 200, {
       // An address, not the bytes: see publishEnhanceResult.
-      image: publishEnhanceResult(big.buffer, big.mime),
+      image: publishEnhanceResult(jpeg, "image/jpeg"),
       engine,
       ai: Boolean(payload),
       cached: Boolean(payload?.cached),
       cost: payload && !payload.cached ? payload.cost : null,
+      detail,
       enlarged: true,
       width: got?.width || null,
       height: got?.height || null,
@@ -6855,7 +6891,7 @@ async function handleHdUpscale(req, res) {
     logImageAction(req, {
       ...audit, outcome: "success", engine, costUsd, cached: Boolean(payload?.cached),
       durationMs: Date.now() - t0,
-    }, { before: image, after: { buffer: big.buffer, mime: big.mime } });
+    }, { before: image, after: { buffer: jpeg, mime: "image/jpeg" } });
   } catch (err) {
     console.error("✗ hd-upscale error:", err);
     const error = err.message || "HD Upscale failed.";
@@ -6864,6 +6900,13 @@ async function handleHdUpscale(req, res) {
       ...audit, outcome: err.moderated ? "refused" : "failed", error, durationMs: Date.now() - t0,
     }, { before: image });
   }
+}
+
+/* The enlarge target for a picture the model did not touch — the plan's own
+   arithmetic, from the picture's size rather than the model's working size. */
+function hdTargetFor(rgb) {
+  return planHdUpscale(rgb.width, rgb.height, { longEdge: HD_UPSCALE_LONG_EDGE, minGain: Infinity })?.target
+    || { width: rgb.width, height: rgb.height };
 }
 
 async function handleUpscaleImage(req, res) {

@@ -647,12 +647,13 @@
           <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
         </button>
         <div class="acc-body"><div class="acc-inner">
-            <!-- HD Upscale: the paid upscale. A gpt-image-1.5 restore (~$0.12),
-                 then a free 2x enlarge + sharpen on our server to ~3072px. It
-                 replaced the AI Upscale button, which ran the same restore and
-                 stopped at 1536px. -->
+            <!-- HD Upscale: the paid upscale. On smaller photos a gpt-image-1.5
+                 restore (~$0.12) supplies finer detail, which the server lays
+                 onto the original's own pixels so faces are not redrawn; then
+                 an enlarge to ~3072px. Larger photos are enlarged for free.
+                 See lib/hd-upscale.js. -->
             <button type="button" id="hd-upscale-btn" class="btn-ai btn-hd-upscale" disabled
-                    title="Restores the photo with ChatGPT (gpt-image-1.5, ~$0.12), then enlarges it to ~3000px for free.">
+                    title="Enlarges the photo to ~3000px. On smaller photos OpenAI adds sharper detail (~$0.12); faces and colours stay exactly as in the original.">
               <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
               HD Upscale
             </button>
@@ -662,13 +663,13 @@
                     title="Enlarges and sharpens on our server. No AI, no cost.">
               Free Upscale
             </button>
-            <!-- Reframe is its own button, red because it is the expensive one
-                 (a full gpt-image redraw), and capped at 2 presses per page —
-                 each story slide has its own. The server enforces the same cap. -->
+            <!-- Reframe is its own button, red because it is a full gpt-image
+                 redraw (~$0.12 at medium). No per-page cap since 2026-10-14;
+                 the server's hourly per-user cap and spend guard still apply. -->
             <button type="button" id="ai-reframe-btn" class="btn-ai btn-danger-reframe" disabled
-                    title="Redraws the whole picture at the poster's shape. Paid, 2 per page.">
+                    title="Redraws the whole picture at the poster's shape. Paid, about $0.12 a press.">
               <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
-              <span class="reframe-label">Reframe (2 left)</span>
+              <span class="reframe-label">Reframe</span>
             </button>
             <!-- The way back. AI Enhance overwrites the picture in place and
                  costs money to run, so a reviewer who does not like what came
