@@ -4940,15 +4940,16 @@ function drawPixTextScreen() {
      Capped by height (1080 = the square card) so a wide card does not get
      poster-sized copy; fitPreviewTextLines still shrinks it to fit. */
   const textScale = Math.min(W / 920, H / 1080);
-  /* The last line ENDS where the poster's headline ends, so swiping from
-     slide 1 to slide 2 keeps the copy on the same line. `lastLineY` is the
-     top of that line, hence the font size off the poster's bottom edge.
-     It used to be the poster's padding taken as the line's TOP in exports
-     (a whole line lower than the poster) and a fixed 335 in the preview
-     (into the like bar). Same padding the poster uses, footer lift included. */
+  /* The last line ends TEXT_POINT.shareLift above the poster headline's
+     bottom edge. `lastLineY` is the top of that line, hence the font size.
+     The lift is for the DailyMattr app: sharing lays a "Read now on
+     dailymattr App / Download on" strip over the foot of the image, and
+     level with the poster the last line sat right under it. Only this page
+     moves; the poster headline stays where it is. */
   const posterBottomPadding = L.headline.bottomPadding
     + (state.aspectRatio === "4:5" && !isXRenderMode() ? POSTER_FOOTER.headlineLift : 0);
-  const lastLineY = H - posterBottomPadding - TEXT_POINT.size * textScale;
+  const lastLineY = H - posterBottomPadding - TEXT_POINT.shareLift * (H / 1700)
+    - TEXT_POINT.size * textScale;
   /* Measured before anything is painted over the photograph, because the glass
      and the fade below are anchored to the top of this block. */
   const textLayout = layoutWrappedPreviewText(
@@ -5995,6 +5996,7 @@ const TEXT_POINT = {
   lineHeight: 27 * 920 / 382,
   gap: 8 / 27,                  // of the line height
   sidePadding: 28 / 382,        // of the card width, each side
+  shareLift: 50,               // 9:16 px above the poster headline's bottom; clears the app's share strip
   quoteWidth: 9.5 / 17.3,
   quoteHeight: 9 / 17.3,
   quoteGap: 5.8 / 17.3,         // opening mark to the first word
