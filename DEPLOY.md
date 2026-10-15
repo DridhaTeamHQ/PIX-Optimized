@@ -39,7 +39,7 @@ Set on the **app** service:
 | `PEXELS_API_KEY` | optional | stock images. Unset = that source is skipped |
 | `FAL_KEY` | optional | Flux image generation (last-resort, paid) |
 | `IMAGE_QUALITY` | optional | `medium` (default). low ≈ $0.013, medium ≈ $0.05, high ≈ $0.20 per image. The main cost lever — `high` is 4× medium |
-| `ENHANCE_RATE_MAX` | optional | `50`. Billed AI Enhances allowed per user per hour before a 429 |
+| `ENHANCE_RATE_MAX` | optional | Unset/`0` = no cap. Billed AI Enhances allowed per user per hour before a 429 |
 | `DISABLE_GPT_IMAGE` | optional | `1` switches AI Enhance off entirely (route returns 503) |
 | `MAX_CLIP_SECONDS` | optional | `90` |
 | `MAX_UPLOAD_BYTES` | optional | `314572800` (300 MB) |

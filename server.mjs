@@ -611,7 +611,7 @@ const server = http.createServer(async (req, res) => {
          ENHANCE_RATE_MAX on Railway can be confirmed by looking rather than by
          spending eleven billed calls to find out. */
       limits: {
-        enhancePerUserPerHour: ENHANCE_RATE_MAX,
+        enhancePerUserPerHour: ENHANCE_RATE_MAX || "unlimited",
       },
     });
     return;
@@ -5398,9 +5398,10 @@ const ENHANCE_SIZES = new Set(["1024x1024", "1024x1536", "1536x1024", "auto"]);
    consume anyone's allowance, so recording happens after the paid call
    returns rather than at the door.
 
-   ENHANCE_RATE_MAX is generous on purpose. A reviewer doing real work will
-   not reach it; something looping will reach it in seconds. */
-const ENHANCE_RATE_MAX = Number(process.env.ENHANCE_RATE_MAX) || 50;
+   Off by default: reviewers were hitting it during real work. Set
+   ENHANCE_RATE_MAX to a positive number to bring a per-user hourly cap back;
+   unset or 0 means no cap (calls are still metered on /health). */
+const ENHANCE_RATE_MAX = Math.max(0, Number(process.env.ENHANCE_RATE_MAX) || 0);
 const ENHANCE_RATE_WINDOW_MS = 60 * 60_000;
 const enhanceLimiter = createRateLimiter({
   windowMs: ENHANCE_RATE_WINDOW_MS,
@@ -5440,8 +5441,9 @@ function capFromEnv(name, fallback) {
   }
   return n;
 }
-const SPEND_CAP_USD_HOUR = capFromEnv("SPEND_CAP_USD_HOUR", 3);
-const SPEND_CAP_USD_DAY = capFromEnv("SPEND_CAP_USD_DAY", 10);
+// Defaults are 0 — metered, never refused. Set either env var to bring a ceiling back.
+const SPEND_CAP_USD_HOUR = capFromEnv("SPEND_CAP_USD_HOUR", 0);
+const SPEND_CAP_USD_DAY = capFromEnv("SPEND_CAP_USD_DAY", 0);
 const spendGuard = createSpendGuard([
   { name: "hour", ms: 60 * 60_000, capUsd: SPEND_CAP_USD_HOUR },
   { name: "day", ms: 24 * 60 * 60_000, capUsd: SPEND_CAP_USD_DAY },
@@ -6254,7 +6256,7 @@ async function handleEnhancePlan(req, res) {
 async function enhanceSpendGate(req, res) {
   const user = await currentUser(req);
   const key = user?.username ? `u:${user.username}` : `ip:${clientKey(req)}`;
-  const gate = enhanceLimiter.check(key);
+  const gate = ENHANCE_RATE_MAX ? enhanceLimiter.check(key) : { allowed: true };
   if (!gate.allowed) {
     const mins = Math.ceil(gate.retryAfterSeconds / 60);
     console.warn(`⚠ enhance rate limit hit by ${key} — ${ENHANCE_RATE_MAX}/hour`);
