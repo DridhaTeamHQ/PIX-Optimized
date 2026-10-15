@@ -4933,8 +4933,6 @@ function drawPixTextScreen() {
   const textX = W * TEXT_POINT.sidePadding;
   const textMaxWidth = W - 2 * textX;
   const minTextY = state.forceTextExport ? H * 0.16 : H * 0.1;
-  const bottomTextPadding = state.forceTextExport ? L.headline.bottomPadding : 335;
-  const lastLineY = H - bottomTextPadding * (H / 1700);
   /* The copy is sized off the card's WIDTH, like the design (17.3px on a
      382-wide card), not off `s`. `s` is pinned by the 9:16 height, so on a
      4:5 card it came out at 0.79 and the copy read ~30% smaller than the
@@ -4942,6 +4940,15 @@ function drawPixTextScreen() {
      Capped by height (1080 = the square card) so a wide card does not get
      poster-sized copy; fitPreviewTextLines still shrinks it to fit. */
   const textScale = Math.min(W / 920, H / 1080);
+  /* The last line ENDS where the poster's headline ends, so swiping from
+     slide 1 to slide 2 keeps the copy on the same line. `lastLineY` is the
+     top of that line, hence the font size off the poster's bottom edge.
+     It used to be the poster's padding taken as the line's TOP in exports
+     (a whole line lower than the poster) and a fixed 335 in the preview
+     (into the like bar). Same padding the poster uses, footer lift included. */
+  const posterBottomPadding = L.headline.bottomPadding
+    + (state.aspectRatio === "4:5" && !isXRenderMode() ? POSTER_FOOTER.headlineLift : 0);
+  const lastLineY = H - posterBottomPadding - TEXT_POINT.size * textScale;
   /* Measured before anything is painted over the photograph, because the glass
      and the fade below are anchored to the top of this block. */
   const textLayout = layoutWrappedPreviewText(
