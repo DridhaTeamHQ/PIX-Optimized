@@ -4935,11 +4935,18 @@ function drawPixTextScreen() {
   const minTextY = state.forceTextExport ? H * 0.16 : H * 0.1;
   const bottomTextPadding = state.forceTextExport ? L.headline.bottomPadding : 335;
   const lastLineY = H - bottomTextPadding * (H / 1700);
+  /* The copy is sized off the card's WIDTH, like the design (17.3px on a
+     382-wide card), not off `s`. `s` is pinned by the 9:16 height, so on a
+     4:5 card it came out at 0.79 and the copy read ~30% smaller than the
+     story page before the fitter shrank it further; 16:9 got under a third.
+     Capped by height (1080 = the square card) so a wide card does not get
+     poster-sized copy; fitPreviewTextLines still shrinks it to fit. */
+  const textScale = Math.min(W / 920, H / 1080);
   /* Measured before anything is painted over the photograph, because the glass
      and the fade below are anchored to the top of this block. */
   const textLayout = layoutWrappedPreviewText(
     getDetailTextForPreview(), minTextY, textMaxWidth, lastLineY,
-    TEXT_POINT.size * s, TEXT_POINT.lineHeight * s);
+    TEXT_POINT.size * textScale, TEXT_POINT.lineHeight * textScale);
 
   /* ── The same treatment the poster and the story page get ──────────────
 
