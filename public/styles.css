@@ -361,6 +361,12 @@ body:not([data-role="admin"]) .admin-only {
   display: none;
 }
 
+/* Roles that work on everyone's posts: QA, admin and creator. A creator sees
+   these but not .qa-only, which is the verdict and publish controls. */
+body:not([data-role="qa"]):not([data-role="admin"]):not([data-role="creator"]) .editor-only {
+  display: none;
+}
+
 .role-badge.is-qa {
   background: rgba(16, 152, 110, 0.14);
   color: #10986e;

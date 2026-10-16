@@ -22,7 +22,7 @@ import {
   SESSION_COOKIE, parseCookies, sessionCookie, clearedSessionCookie,
   login, logout, sessionUser, purgeExpiredSessions,
   throttleCheck, throttleRecordFailure, throttleClear, createRateLimiter,
-  ROLES, canReview, createUser, listUsers, setPassword, setUserActive, normaliseUsername, isAdmin, updateUser, deleteUser,
+  ROLES, canReview, canEditOthers, createUser, listUsers, setPassword, setUserActive, normaliseUsername, isAdmin, updateUser, deleteUser,
 } from "./lib/auth.js";
 import { handlePixRequest } from "./lib/pix-api.js";
 import { createSpendGuard, priceTextUsage } from "./lib/spend-guard.js";
@@ -404,7 +404,7 @@ const server = http.createServer(async (req, res) => {
     }
     // 403, not 401: the session is fine, the role is not. Reporting this as
     // "sign in" would send a writer round the login screen forever.
-    if (REVIEWER_ONLY_API_ROUTES.has(apiPath) && !canReview(user.role)) {
+    if (REVIEWER_ONLY_API_ROUTES.has(apiPath) && !canEditOthers(user.role)) {
       sendJson(res, 403, {
         error: "AI Enhance is done by QA at review time — save the post with the image as it is.",
       });

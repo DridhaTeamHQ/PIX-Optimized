@@ -635,13 +635,13 @@
            one section twice the height of every other and forced the row out
            of balance. They are also two different jobs: one brings a picture
            in, the other reprocesses the picture already there. -->
-      <!-- qa-only: enhancing is a review step, not a writing one. A writer
+      <!-- editor-only (QA, admin, creator): enhancing is not a writing step. A writer
            keeps whatever picture the story came with; QA enhances the ones
            that need it, on posts that are actually going out. That way the
            paid gpt-image call is spent once per PUBLISHED image instead of
            once per attempt on every draft. Server-side too — see
            REVIEWER_ONLY_API_ROUTES in server.mjs. -->
-      <div class="acc qa-only" data-open="true">
+      <div class="acc editor-only" data-open="true">
         <button type="button" class="acc-head" aria-expanded="true">
           <span class="acc-title">AI Super Resolution</span>
           <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
@@ -1152,16 +1152,16 @@
                writer's list IS their own posts; the moment someone is QA the
                same screen becomes everyone's, so a reviewer who also writes
                had 500+ rows and no way to find the handful that are theirs. -->
-          <button type="button" class="review-filter qa-only" data-filter="mine" role="tab" aria-selected="false">Mine</button>
-          <button type="button" class="review-filter qa-only" data-filter="awaiting" role="tab" aria-selected="false">Awaiting</button>
+          <button type="button" class="review-filter editor-only" data-filter="mine" role="tab" aria-selected="false">Mine</button>
+          <button type="button" class="review-filter editor-only" data-filter="awaiting" role="tab" aria-selected="false">Awaiting</button>
           <button type="button" class="review-filter" data-filter="drafts" role="tab" aria-selected="false">Drafts</button>
-          <button type="button" class="review-filter qa-only" data-filter="approved" role="tab" aria-selected="false">Approved</button>
-          <button type="button" class="review-filter qa-only" data-filter="rejected" role="tab" aria-selected="false">Rejected</button>
+          <button type="button" class="review-filter editor-only" data-filter="approved" role="tab" aria-selected="false">Approved</button>
+          <button type="button" class="review-filter editor-only" data-filter="rejected" role="tab" aria-selected="false">Rejected</button>
           <!-- Published is where a correction starts: DailyMattr cannot edit an
                entry, so fixing a live story means reopening the exact post that
                went out and sending a corrected copy. Without this tab those
                posts were only findable by scrolling Approved. -->
-          <button type="button" class="review-filter qa-only" data-filter="published" role="tab" aria-selected="false">Published</button>
+          <button type="button" class="review-filter editor-only" data-filter="published" role="tab" aria-selected="false">Published</button>
         </div>
         <!-- Searches server-side, so it reaches past the 100-row page rather
              than filtering only what is already on screen. -->
@@ -1408,6 +1408,7 @@
         <select id="writer-role">
           <option value="writer" selected>Writer</option>
           <option value="qa">QA</option>
+          <option value="creator">Creator</option>
         </select>
       </label>
       <button type="submit" class="btn-primary" id="writer-create-btn">Create account</button>
@@ -1597,6 +1598,7 @@
         <select id="edit-writer-role">
           <option value="writer">Writer</option>
           <option value="qa">QA</option>
+          <option value="creator">Creator</option>
         </select>
       </label>
       <div class="pix-dialog-actions">

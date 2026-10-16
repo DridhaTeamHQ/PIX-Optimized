@@ -940,11 +940,14 @@ function validateDailyMattrExtraFiles() {
 /* Capability checks, so a new role does not mean hunting every `=== "qa"`
    in the file. An admin is a superset of QA. */
 function roleLabel(role) {
-  return role === "admin" ? "Admin" : role === "qa" ? "QA" : "Writer";
+  return role === "admin" ? "Admin" : role === "qa" ? "QA" : role === "creator" ? "Creator" : "Writer";
 }
 
 function canReviewRole(role) { return role === "qa" || role === "admin"; }
 function isAdminRole(role) { return role === "admin"; }
+/* A creator edits and deletes anyone's post and uses AI Enhance, but holds no
+   verdict and no publish — those stay on canReviewRole. */
+function canEditOthersRole(role) { return canReviewRole(role) || role === "creator"; }
 
 /* ── Your own count, in the header ──
 
@@ -1146,7 +1149,7 @@ if (logoutBtn) {
 /** True when this user may write to `post` (a library row). */
 function canEditPost(post) {
   if (!state.user) return false;
-  if (canReviewRole(state.user.role)) return true;
+  if (canEditOthersRole(state.user.role)) return true;
   return !post?.user_login_id || post.user_login_id === state.user.id;
 }
 
@@ -15353,15 +15356,19 @@ reviewDateClear?.addEventListener("click", () => {
    resolves, so a writer signing in after QA never sees QA's wording. */
 function syncReviewCopy() {
   const isQa = canReviewRole(state.user?.role);
-  if (reviewTabLabel) reviewTabLabel.textContent = isQa ? "Review" : "My posts";
-  if (reviewTitle) reviewTitle.innerHTML = isQa ? "Review<br>and publish." : "Your<br>saved posts.";
+  // A creator sees the whole library (and its filters) but publishes nothing.
+  const isCreator = !isQa && canEditOthersRole(state.user?.role);
+  if (reviewTabLabel) reviewTabLabel.textContent = isQa ? "Review" : isCreator ? "All posts" : "My posts";
+  if (reviewTitle) reviewTitle.innerHTML = isQa ? "Review<br>and publish." : isCreator ? "All<br>posts." : "Your<br>saved posts.";
   if (reviewDesc) {
     // Approving is no longer something QA does from this list — a post is
     // approved by being published from the editor — so the wording points at
     // the route that exists rather than at a button that has gone.
     reviewDesc.textContent = isQa
       ? "Every post the writers have saved. Open one to edit and publish it, or send it back with Reject."
-      : "Everything you have saved. Open one to keep working on it — QA reviews them from their own view.";
+      : isCreator
+        ? "Every post the team has saved. Open one to edit it — QA reviews and publishes them."
+        : "Everything you have saved. Open one to keep working on it — QA reviews them from their own view.";
   }
   /* Reset only out of a tab this role cannot see. The old flat reset to "all"
      ran on every session resolve, so with writers now offered Drafts it would
@@ -15369,7 +15376,7 @@ function syncReviewCopy() {
      role change in one tab — QA signing out and a writer signing in — where a
      filter left behind would otherwise keep listing under a tab that has just
      been hidden. */
-  if (!isQa && (reviewMine || [...reviewStatuses].some((s) => s !== "drafts"))) {
+  if (!isQa && !isCreator && (reviewMine || [...reviewStatuses].some((s) => s !== "drafts"))) {
     selectReviewFilter(reviewStatuses.has("drafts") ? "drafts" : "all");
   }
 }
@@ -16338,7 +16345,7 @@ function renderReviewItem(post) {
   li.className = "review-item"
     + (post.published_at ? " is-published" : post.approved ? " is-approved" : post.rejected ? " is-rejected" : "");
 
-  // Bulk-select tick box — reviewers only, since Reject and Delete are theirs.
+  // Bulk-select tick box — reviewers only, since bulk Reject is theirs.
   if (canReviewRole(state.user?.role)) {
     const box = document.createElement("input");
     box.type = "checkbox";
@@ -16508,6 +16515,14 @@ function renderReviewItem(post) {
     }
 
     actions.append(reject, del);
+  } else if (canEditOthersRole(state.user?.role)) {
+    // A creator may delete, but has no verdict to give.
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "btn-ghost";
+    del.textContent = "Delete";
+    del.addEventListener("click", () => deleteReviewPost(post, li));
+    actions.append(del);
   }
   li.append(main, actions);
   return li;
