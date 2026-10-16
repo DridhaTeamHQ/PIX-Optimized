@@ -1787,44 +1787,53 @@ async function handlePix(req, res) {
    the client. */
 /* Which categories QA may publish into, and in what order.
 
-   DailyMattr offers 12; Shortly uses a subset, and the dropdown reads better
-   in editorial priority than in whatever order their API returns. The names
-   here are matched case-insensitively against their list and the IDs always
-   come from them — we never hard-code an ID, so if they renumber anything
-   this keeps working.
+   Every category DailyMattr offers is shown. The names below only set the
+   order — editorial priority reads better than whatever order their API
+   returns — and anything they offer that is not named here follows, in their
+   order. Hiding the rest used to drop Crime, Education, Health, Business and
+   Spiritual from the dropdown even though the API returned them.
 
-   A name we ask for that they do not offer is skipped with a warning rather
-   than guessed at: sending an invented category_id would file the story under
-   the wrong section, which is worse than not offering it.
+   Names are matched ignoring case, emoji and punctuation: DailyMattr calls
+   one category "Technology✊", which an exact match silently dropped. IDs
+   always come from them — we never hard-code one, so a renumbering on their
+   side keeps working.
 
-   Override with DAILYMATTR_CATEGORIES="Entertainment,Technology,…", or set it
-   empty to show everything they offer. */
-const DAILYMATTR_CATEGORY_ORDER = (
-  env("DAILYMATTR_CATEGORIES") ||
-  "Entertainment,Technology,Lifestyle,State,International,National,Finance,Sports"
-).split(",").map((s) => s.trim()).filter(Boolean);
+   Set DAILYMATTR_CATEGORIES="Entertainment,Technology,…" to show ONLY those,
+   in that order. A name in it they do not offer is skipped with a warning
+   rather than guessed at: an invented category_id would file the story under
+   the wrong section. */
+const DAILYMATTR_CATEGORY_ONLY = env("DAILYMATTR_CATEGORIES")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+const DAILYMATTR_CATEGORY_ORDER = DAILYMATTR_CATEGORY_ONLY.length
+  ? DAILYMATTR_CATEGORY_ONLY
+  : "Entertainment,Technology,State,International,National,Finance,Sports".split(",");
 
 let warnedMissingCategories = false;
 
-function applyCategoryPolicy(categories) {
-  if (!DAILYMATTR_CATEGORY_ORDER.length) return categories;
+function categoryKey(name) {
+  return String(name).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
 
-  const byName = new Map(categories.map((c) => [String(c.name).trim().toLowerCase(), c]));
+function applyCategoryPolicy(categories) {
+  const byKey = new Map(categories.map((c) => [categoryKey(c.name), c]));
   const kept = [];
   const missing = [];
   for (const name of DAILYMATTR_CATEGORY_ORDER) {
-    const hit = byName.get(name.toLowerCase());
-    if (hit) kept.push(hit);
-    else missing.push(name);
+    const hit = byKey.get(categoryKey(name));
+    if (hit && !kept.includes(hit)) kept.push(hit);
+    else if (!hit) missing.push(name);
   }
 
-  if (missing.length && !warnedMissingCategories) {
-    warnedMissingCategories = true;
-    console.warn(`⚠ DailyMattr does not offer: ${missing.join(", ")} — not shown to QA. Ask them to add it, or drop it from DAILYMATTR_CATEGORIES.`);
+  if (DAILYMATTR_CATEGORY_ONLY.length) {
+    if (missing.length && !warnedMissingCategories) {
+      warnedMissingCategories = true;
+      console.warn(`⚠ DailyMattr does not offer: ${missing.join(", ")} — not shown to QA. Ask them to add it, or drop it from DAILYMATTR_CATEGORIES.`);
+    }
+    // Never hand QA an empty dropdown; if nothing matched, their names have
+    // changed and showing all of them beats showing none.
+    return kept.length ? kept : categories;
   }
-  // Never hand QA an empty dropdown; if nothing matched, their names have
-  // changed and showing all of them beats showing none.
-  return kept.length ? kept : categories;
+  return [...kept, ...categories.filter((c) => !kept.includes(c))];
 }
 
 async function handleDailyMattrMeta(req, res) {
