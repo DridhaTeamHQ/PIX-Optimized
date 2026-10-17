@@ -276,6 +276,7 @@ body,
 
 input[type="text"],
 input[type="url"],
+input[type="email"],
 input[type="password"],
 input[type="date"],
 input[type="search"],
@@ -3336,7 +3337,7 @@ a.imageai-shot:hover img {
    Three light hues sit under 3:1 against white, which is why every slice is
    also named, counted and given its percentage in the legend. */
 .analytics-share-grid {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .analytics-pie {
@@ -3354,7 +3355,7 @@ a.imageai-shot:hover img {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 24px 40px;
+  gap: 20px 28px;
 }
 
 :root[data-theme="dark"] .analytics-pie {
@@ -3380,7 +3381,7 @@ a.imageai-shot:hover img {
   stroke-linejoin: round;
   cursor: pointer;
   transition: opacity 0.15s ease, transform 0.15s ease;
-  transform-origin: 120px 120px;
+  transform-origin: 130px 130px; /* the pie's centre: CATEGORY_PIE.size / 2 */
 }
 
 .analytics-pie-slice:focus {
@@ -3409,6 +3410,15 @@ a.imageai-shot:hover img {
   pointer-events: none;
 }
 
+.analytics-pie-count {
+  font-size: 13px;
+}
+
+.analytics-pie-pct {
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .analytics-pie.has-focus .analytics-pie-label {
   opacity: 0.35;
 }
@@ -3421,8 +3431,8 @@ a.imageai-shot:hover img {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 2px;
-  flex: 1 1 280px;
-  max-width: 460px;
+  flex: 1 1 220px;
+  max-width: 420px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3475,6 +3485,26 @@ a.imageai-shot:hover img {
   font-variant-numeric: tabular-nums;
 }
 
+/* The total under each legend: same columns, no swatch, a rule above. */
+.analytics-pie-legend li.analytics-pie-total {
+  margin-top: 4px;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+  font-weight: 700;
+}
+
+.analytics-pie-legend li.analytics-pie-total::before {
+  background: transparent;
+}
+
+.analytics-pie-legend li.analytics-pie-total span {
+  color: var(--text-primary);
+}
+
+.analytics-pie.has-focus .analytics-pie-legend li.analytics-pie-total {
+  opacity: 1;
+}
+
 .analytics-pie-legend li.is-grouped span {
   padding-left: 12px;
   color: var(--text-muted);
@@ -3490,6 +3520,242 @@ a.imageai-shot:hover img {
   color: var(--text-muted);
   font-size: 0.7rem;
   font-style: normal;
+}
+
+/* ── Daily report recipients (admin) ─────────────────────────────────────── */
+.analytics-report-grid {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 10px;
+}
+
+.analytics-report-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.analytics-report-card .analytics-card-head {
+  margin: 0;
+  align-items: flex-start;
+}
+
+.report-status {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-input);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.report-status.is-ready { color: #0b8a63; }
+.report-status.is-off { color: #c2410c; }
+
+.report-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.report-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  flex: 1 1 520px;
+}
+
+.report-add .field,
+.report-send .field {
+  flex: 1 1 200px;
+  margin: 0;
+}
+
+.report-add .btn-primary,
+.report-import .btn-secondary,
+.report-send .btn-ghost {
+  flex: none;
+  width: auto;
+  min-height: 40px;
+  padding: 0 18px;
+}
+
+.report-add .field-label small {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.report-import,
+.report-send {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.report-send {
+  align-items: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.report-send .field {
+  flex: 0 1 220px;
+}
+
+.report-hint {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.report-message {
+  margin: 0;
+  min-height: 1em;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.report-message:empty {
+  display: none;
+}
+
+.report-message.is-error { color: #c2410c; }
+.report-message.is-success { color: #0b8a63; }
+
+.report-list {
+  display: grid;
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+
+.report-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 0.8rem;
+}
+
+.report-row:last-child {
+  border-bottom: 0;
+}
+
+.report-row-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-input);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.report-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-row .report-email {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.report-row .report-meta {
+  color: var(--text-muted);
+}
+
+.report-remove {
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: #c2410c;
+  font-size: 0.74rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.report-remove:hover {
+  background: rgba(228, 94, 109, 0.08);
+}
+
+.report-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.report-edit,
+.report-save,
+.report-cancel {
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.report-edit:hover,
+.report-cancel:hover {
+  background: var(--surface-input);
+  color: var(--text-primary);
+}
+
+.report-save {
+  border-color: var(--accent, #3979ff);
+  background: var(--accent, #3979ff);
+  color: #ffffff;
+}
+
+.report-save:hover {
+  filter: brightness(1.05);
+}
+
+.report-row.is-editing {
+  margin: 0;
+  background: var(--surface-input);
+}
+
+.report-row.is-editing input {
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.report-empty {
+  padding: 18px 12px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .report-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .report-row .report-name,
+  .report-row .report-meta,
+  .report-row-head {
+    display: none;
+  }
+  /* Editing on a phone: both boxes full width, the buttons under them. */
+  .report-row.is-editing {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .analytics-bars {
@@ -3561,7 +3827,8 @@ a.imageai-shot:hover img {
 
 @media (max-width: 1100px) {
   .analytics-chart-grid,
-  .analytics-breakdown-grid {
+  .analytics-breakdown-grid,
+  .analytics-share-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

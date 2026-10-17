@@ -9091,17 +9091,28 @@ function renderAnalyticsBreakdowns(analytics = {}) {
   });
 }
 
-/* ── Category share pie ──────────────────────────────────────────────────────
-   Each category's share of the posts sent in the current filters, so the
-   biggest sections read at a glance. Pointing at a slice — or its legend row,
-   or tabbing to it — pops up the category, its post count and its share.
+/* ── Category share pies ─────────────────────────────────────────────────────
+   Two pies, side by side on the Breakdown page:
+
+     Sent       each category's share of the posts sent to QA
+     Approved   each category's share of the posts QA approved
+
+   Every slice big enough to hold it carries its count and percentage; the
+   legend carries both for every category. Pointing at a slice — or its legend
+   row, or tabbing to it — pops up the category, its count, its share and, on
+   the approved pie, how many of that category's sent posts were approved.
+
+   A category keeps ONE colour in both pies. Colours are handed out from the
+   sent ranking and the approved pie borrows them, so "National" is the same
+   blue in each. Ranking each pie on its own would paint the same category two
+   different colours a hand's width apart.
 
    Eight hues at most (see .analytics-pie in revamp.css). With more categories
-   than that, the smallest fold into one grey "Other" slice rather than taking
-   a generated ninth hue nobody could tell from its neighbours; the legend
-   still lists every one of them, by name, under "Other". */
+   than that, the smallest by posts sent fold into one grey "Other" slice in
+   both pies rather than taking a generated ninth hue nobody could tell from
+   its neighbours; the legend still lists every one of them under "Other". */
 const CATEGORY_PIE_SLOTS = 8;
-const CATEGORY_PIE = { size: 240, radius: 110, labelAt: 0.64, labelMin: 0.08 };
+const CATEGORY_PIE = { size: 260, radius: 120, labelAt: 0.62, labelMin: 0.08 };
 
 function formatShare(fraction) {
   const pct = fraction * 100;
@@ -9109,27 +9120,32 @@ function formatShare(fraction) {
   return `${pct < 10 ? pct.toFixed(1).replace(/\.0$/, "") : Math.round(pct)}%`;
 }
 
-function renderAnalyticsCategoryPie(categories = []) {
-  const host = document.getElementById("analytics-category-pie");
+/* Category key → hue, from the sent ranking. null means "folded into Other". */
+function categoryPieTones(sentRows) {
+  const folds = sentRows.length > CATEGORY_PIE_SLOTS;
+  return new Map(sentRows.map((row, i) => [
+    row.key,
+    !folds || i < CATEGORY_PIE_SLOTS - 1 ? `var(--cat-${i + 1})` : null,
+  ]));
+}
+
+function renderCategoryPie(host, rows, { tones, noun, emptyText, detail = () => "" }) {
   if (!host) return;
   host.classList.remove("has-focus");
-
-  const rows = (categories || [])
-    .map((c) => ({ label: categoryName(c.category_id), count: Number(c.sent_count) || 0 }))
-    .filter((row) => row.count > 0)
-    .sort((a, b) => b.count - a.count);
-  const total = rows.reduce((sum, row) => sum + row.count, 0);
+  const counted = rows.filter((row) => row.count > 0).sort((a, b) => b.count - a.count);
+  const total = counted.reduce((sum, row) => sum + row.count, 0);
   if (!total) {
-    host.innerHTML = `<div class="analytics-empty">Nothing sent in this range.</div>`;
+    host.innerHTML = `<div class="analytics-empty">${emptyText}</div>`;
     return;
   }
 
-  const folds = rows.length > CATEGORY_PIE_SLOTS;
-  const named = folds ? rows.slice(0, CATEGORY_PIE_SLOTS - 1) : rows;
-  const rest = folds ? rows.slice(CATEGORY_PIE_SLOTS - 1) : [];
-  const slices = named.map((row, i) => ({ ...row, tone: `var(--cat-${i + 1})`, members: [] }));
+  const slices = counted
+    .filter((row) => tones.get(row.key))
+    .map((row) => ({ ...row, tone: tones.get(row.key), members: [] }));
+  const rest = counted.filter((row) => !tones.get(row.key));
   if (rest.length) {
     slices.push({
+      key: "other",
       label: "Other",
       count: rest.reduce((sum, row) => sum + row.count, 0),
       tone: "var(--cat-other)",
@@ -9137,7 +9153,7 @@ function renderAnalyticsCategoryPie(categories = []) {
     });
   }
 
-  // Clockwise from twelve o'clock, largest first.
+  // Clockwise from twelve o'clock, largest first ("Other" last).
   const { size, radius: r } = CATEGORY_PIE;
   const c = size / 2;
   const at = (angle, dist = r) => [c + dist * Math.cos(angle), c + dist * Math.sin(angle)];
@@ -9152,7 +9168,7 @@ function renderAnalyticsCategoryPie(categories = []) {
 
   const shapes = slices.map((slice, i) => {
     const attrs = `class="analytics-pie-slice" data-slice="${i}" style="fill:${slice.tone}" tabindex="0"
-      role="img" aria-label="${escapeHtml(slice.label)}: ${formatCount(slice.count)} posts, ${formatShare(slice.share)}"`;
+      role="img" aria-label="${escapeHtml(slice.label)}: ${formatCount(slice.count)} ${noun}, ${formatShare(slice.share)}"`;
     // One category on its own is the whole circle; an arc from a point back to
     // itself draws nothing.
     if (slice.share >= 0.9999) return `<circle cx="${c}" cy="${c}" r="${r}" ${attrs}></circle>`;
@@ -9162,13 +9178,15 @@ function renderAnalyticsCategoryPie(categories = []) {
     return `<path d="M${c},${c} L${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 ${large} 1 ${x1.toFixed(2)},${y1.toFixed(2)} Z" ${attrs}></path>`;
   }).join("");
 
-  // Percentages printed on the slices big enough to hold them; the legend
-  // carries every one regardless.
+  // Count over percentage, on the slices big enough to hold two lines; the
+  // legend carries both for every slice regardless.
   const labels = slices.map((slice, i) => {
     if (slice.share < CATEGORY_PIE.labelMin) return "";
     const [lx, ly] = slice.share >= 0.9999 ? [c, c] : at(slice.mid, r * CATEGORY_PIE.labelAt);
-    return `<text class="analytics-pie-label" data-slice="${i}" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}"
-      text-anchor="middle" dominant-baseline="central">${formatShare(slice.share)}</text>`;
+    return `<text class="analytics-pie-label" data-slice="${i}" text-anchor="middle">
+      <tspan class="analytics-pie-count" x="${lx.toFixed(1)}" y="${(ly - 7).toFixed(1)}" dominant-baseline="central">${formatCount(slice.count)}</tspan>
+      <tspan class="analytics-pie-pct" x="${lx.toFixed(1)}" y="${(ly + 9).toFixed(1)}" dominant-baseline="central">${formatShare(slice.share)}</tspan>
+    </text>`;
   }).join("");
 
   const legendRow = (row, i, grouped = false) => `
@@ -9182,10 +9200,13 @@ function renderAnalyticsCategoryPie(categories = []) {
 
   host.innerHTML = `
     <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="group"
-         aria-label="Category share of ${formatCount(total)} sent posts">
+         aria-label="Category share of ${formatCount(total)} ${noun}">
       ${shapes}${labels}
     </svg>
-    <ul class="analytics-pie-legend">${legend}</ul>
+    <ul class="analytics-pie-legend">
+      ${legend}
+      <li class="analytics-pie-total"><span>Total</span><strong>${formatCount(total)}</strong><small>100%</small></li>
+    </ul>
     <div class="analytics-tooltip" hidden></div>`;
 
   const svg = host.querySelector("svg");
@@ -9219,12 +9240,12 @@ function renderAnalyticsCategoryPie(categories = []) {
       active = i;
       const slice = slices[i];
       const inOther = slice.members.length
-        ? `<em class="analytics-tooltip-note">${slice.members.length} smaller categories</em>`
+        ? `<em class="analytics-tooltip-note">${slice.members.length} smaller ${slice.members.length === 1 ? "category" : "categories"}</em>`
         : "";
       tip.innerHTML = `<strong>${escapeHtml(slice.label)}</strong>
-        <span style="--analytics-tone:${slice.tone}">Posts<b>${formatCount(slice.count)}</b></span>
+        <span style="--analytics-tone:${slice.tone}">${noun[0].toUpperCase()}${noun.slice(1)}<b>${formatCount(slice.count)}</b></span>
         <span style="--analytics-tone:${slice.tone}">Share<b>${formatShare(slice.share)}</b></span>
-        ${inOther}`;
+        ${detail(slice)}${inOther}`;
       tip.hidden = false;
     }
     placeTip(...(point || sliceCentre(i)));
@@ -9247,11 +9268,44 @@ function renderAnalyticsCategoryPie(categories = []) {
     node.addEventListener("focus", () => show(i));
     node.addEventListener("blur", hide);
   });
-  host.querySelectorAll(".analytics-pie-legend li").forEach((node) => {
+  host.querySelectorAll(".analytics-pie-legend li[data-slice]").forEach((node) => {
     const i = Number(node.dataset.slice);
     node.addEventListener("pointerenter", () => show(i));
     node.addEventListener("pointerleave", hide);
   });
+}
+
+function renderAnalyticsCategoryPie(categories = []) {
+  const rows = (categories || []).map((c) => ({
+    key: c.category_id === null || c.category_id === undefined ? UNCATEGORISED : String(c.category_id),
+    label: categoryName(c.category_id),
+    sent: Number(c.sent_count) || 0,
+    approved: Number(c.approved_count) || 0,
+  }));
+  const sentRows = rows.filter((row) => row.sent > 0).sort((a, b) => b.sent - a.sent);
+  const tones = categoryPieTones(sentRows);
+
+  renderCategoryPie(
+    document.getElementById("analytics-category-pie"),
+    sentRows.map((row) => ({ ...row, count: row.sent })),
+    { tones, noun: "posts sent", emptyText: "Nothing sent in this range." },
+  );
+
+  // The approved slice for "Other" adds up its members' sent posts too, so
+  // its approval line reads the same way as a single category's.
+  const approvalLine = (slice) => {
+    const sent = slice.members.length
+      ? slice.members.reduce((sum, m) => sum + m.sent, 0)
+      : slice.sent;
+    return sent
+      ? `<em class="analytics-tooltip-note">${formatCount(slice.count)} of ${formatCount(sent)} sent were approved (${formatShare(slice.count / sent)})</em>`
+      : "";
+  };
+  renderCategoryPie(
+    document.getElementById("analytics-approved-pie"),
+    sentRows.map((row) => ({ ...row, count: row.approved })),
+    { tones, noun: "approved", emptyText: "Nothing approved in this range.", detail: approvalLine },
+  );
 }
 
 function renderAnalyticsBoard(container, rows, { empty, valueLabel, showRate = false, rateField = "approval_rate", approvedField = "approved_count", pendingField = "pending_count" }) {
@@ -9883,6 +9937,236 @@ function renderAnalyticsRecent() {
   }
 }
 
+/* ── Daily report recipients (admin) ─────────────────────────────────────────
+   The list of people who get the previous day's Breakdown by email at 9:00
+   IST, with an Excel workbook of the tables and charts attached. Only an
+   admin sees this card, and the server refuses everyone else regardless. */
+const REPORT_ENDPOINT = "/api/report-recipients";
+const reportEls = {
+  status: document.getElementById("report-status"),
+  form: document.getElementById("report-add-form"),
+  email: document.getElementById("report-add-email"),
+  name: document.getElementById("report-add-name"),
+  addBtn: document.getElementById("report-add-btn"),
+  file: document.getElementById("report-import-file"),
+  importBtn: document.getElementById("report-import-btn"),
+  message: document.getElementById("report-message"),
+  list: document.getElementById("report-list"),
+  sendDate: document.getElementById("report-send-date"),
+  sendBtn: document.getElementById("report-send-btn"),
+  lastRun: document.getElementById("report-last-run"),
+};
+let reportRecipients = [];
+
+function setReportMessage(text, tone = "") {
+  if (!reportEls.message) return;
+  reportEls.message.textContent = text || "";
+  reportEls.message.className = `report-message${tone ? ` is-${tone}` : ""}`;
+}
+
+function reportDateLabel(iso) {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
+    .format(new Date(`${String(iso).slice(0, 10)}T00:00:00Z`));
+}
+
+function renderReportRecipients() {
+  const host = reportEls.list;
+  if (!host) return;
+  if (!reportRecipients.length) {
+    host.innerHTML = `<div class="report-empty">No one is on the list yet. Add an email above, or import a CSV or Excel file.</div>`;
+    return;
+  }
+  host.innerHTML = `
+    <div class="report-row report-row-head"><span>Email</span><span>Name</span><span>Added</span><span></span></div>
+    ${reportRecipients.map((r) => Number(r.id) === reportEditingId ? `
+      <form class="report-row is-editing" data-report-edit-form="${Number(r.id)}" novalidate>
+        <input type="email" class="report-edit-email" value="${escapeHtml(r.email)}" aria-label="Email" required />
+        <input type="text" class="report-edit-name" value="${escapeHtml(r.name || "")}" placeholder="Name (optional)" aria-label="Name" />
+        <span class="report-meta">${escapeHtml(reportDateLabel(r.createdAt))}${r.addedBy ? ` · ${escapeHtml(r.addedBy)}` : ""}</span>
+        <span class="report-actions">
+          <button type="submit" class="report-save">Save</button>
+          <button type="button" class="report-cancel" data-report-cancel>Cancel</button>
+        </span>
+      </form>` : `
+      <div class="report-row">
+        <span class="report-email" title="${escapeHtml(r.email)}">${escapeHtml(r.email)}</span>
+        <span class="report-name">${escapeHtml(r.name || "—")}</span>
+        <span class="report-meta">${escapeHtml(reportDateLabel(r.createdAt))}${r.addedBy ? ` · ${escapeHtml(r.addedBy)}` : ""}</span>
+        <span class="report-actions">
+          <button type="button" class="report-edit" data-report-edit="${Number(r.id)}" aria-label="Edit ${escapeHtml(r.email)}">Edit</button>
+          <button type="button" class="report-remove" data-report-remove="${Number(r.id)}" aria-label="Remove ${escapeHtml(r.email)}">Remove</button>
+        </span>
+      </div>`).join("")}`;
+
+  const form = host.querySelector("[data-report-edit-form]");
+  form?.querySelector(".report-edit-email")?.focus();
+}
+
+// The row being edited, if any. One at a time: opening another closes this.
+let reportEditingId = null;
+
+async function saveReportEdit(form) {
+  const id = Number(form.dataset.reportEditForm);
+  const email = form.querySelector(".report-edit-email").value.trim();
+  const name = form.querySelector(".report-edit-name").value.trim();
+  if (!email) { setReportMessage("Enter an email address.", "error"); return; }
+  const before = reportRecipients.find((r) => Number(r.id) === id);
+  if (before && before.email === email.toLowerCase() && (before.name || "") === name) {
+    reportEditingId = null;
+    renderReportRecipients();
+    return;
+  }
+  form.querySelectorAll("button, input").forEach((el) => { el.disabled = true; });
+  const { ok, payload } = await reportRequest(`${REPORT_ENDPOINT}/update`, { method: "POST", body: { id, email, name } });
+  if (!ok) {
+    form.querySelectorAll("button, input").forEach((el) => { el.disabled = false; });
+    setReportMessage(payload.error || "Could not save that change.", "error");
+    return;
+  }
+  reportEditingId = null;
+  setReportMessage(`Saved ${payload.recipient?.email}.`, "success");
+  loadReportRecipients();
+}
+
+function renderReportStatus(payload = {}) {
+  const email = payload.email || {};
+  if (reportEls.status) {
+    reportEls.status.textContent = email.ready
+      ? `${reportRecipients.length} ${reportRecipients.length === 1 ? "recipient" : "recipients"} · sends daily at ${payload.schedule?.hourIst ?? 9}:00 IST`
+      : `Email not set up — missing ${(email.missing || []).join(", ")}`;
+    reportEls.status.className = `report-status ${email.ready ? "is-ready" : "is-off"}`;
+  }
+  if (reportEls.sendDate && !reportEls.sendDate.value && payload.schedule?.nextReportDate) {
+    reportEls.sendDate.value = payload.schedule.nextReportDate;
+  }
+  if (reportEls.lastRun) {
+    const run = payload.lastRun;
+    reportEls.lastRun.textContent = !run ? "No scheduled report has been sent yet."
+      : run.sent_at ? `Last scheduled report: ${reportDateLabel(run.report_date)}, sent to ${run.sent_count}${run.failed_count ? ` (${run.failed_count} failed)` : ""}.`
+      : `The ${reportDateLabel(run.report_date)} report has not gone out yet${run.error ? `: ${run.error}` : "."}`;
+  }
+}
+
+async function reportRequest(path, { method = "GET", body, raw } = {}) {
+  const response = await fetch(path, {
+    method,
+    credentials: "same-origin",
+    headers: raw ? { "Content-Type": "application/octet-stream" } : body ? { "Content-Type": "application/json" } : undefined,
+    body: raw || (body ? JSON.stringify(body) : undefined),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (response.status === 401) handleSignedOut();
+  return { ok: response.ok, status: response.status, payload };
+}
+
+async function loadReportRecipients() {
+  if (!reportEls.list || !isAdminRole(state.user?.role)) return;
+  const { ok, payload } = await reportRequest(REPORT_ENDPOINT);
+  if (!ok) {
+    setReportMessage(payload.error || "Could not load the report list.", "error");
+    return;
+  }
+  reportRecipients = payload.recipients || [];
+  renderReportRecipients();
+  renderReportStatus(payload);
+}
+
+reportEls.form?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const email = reportEls.email.value.trim();
+  if (!email) { setReportMessage("Enter an email address.", "error"); reportEls.email.focus(); return; }
+  reportEls.addBtn.disabled = true;
+  const { ok, payload } = await reportRequest(REPORT_ENDPOINT, {
+    method: "POST",
+    body: { email, name: reportEls.name.value.trim() },
+  });
+  reportEls.addBtn.disabled = false;
+  if (!ok) { setReportMessage(payload.error || "Could not add that address.", "error"); return; }
+  reportEls.email.value = "";
+  reportEls.name.value = "";
+  setReportMessage(`Added ${payload.recipient?.email}.`, "success");
+  loadReportRecipients();
+});
+
+reportEls.importBtn?.addEventListener("click", () => reportEls.file?.click());
+reportEls.file?.addEventListener("change", async () => {
+  const file = reportEls.file.files?.[0];
+  reportEls.file.value = "";
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { setReportMessage("That file is larger than 5 MB.", "error"); return; }
+  reportEls.importBtn.disabled = true;
+  setReportMessage(`Reading ${file.name}…`);
+  const { ok, payload } = await reportRequest(
+    `${REPORT_ENDPOINT}/import?filename=${encodeURIComponent(file.name)}`,
+    { method: "POST", raw: await file.arrayBuffer() },
+  );
+  reportEls.importBtn.disabled = false;
+  if (!ok) { setReportMessage(payload.error || "Could not import that file.", "error"); return; }
+  const parts = [`Added ${payload.added?.length || 0}`];
+  if (payload.existing?.length) parts.push(`${payload.existing.length} already on the list`);
+  if (payload.skippedCount) {
+    const first = payload.skipped?.[0];
+    parts.push(`${payload.skippedCount} row${payload.skippedCount === 1 ? "" : "s"} skipped${first ? ` (e.g. row ${first.row}: ${first.reason.toLowerCase()})` : ""}`);
+  }
+  setReportMessage(`${parts.join(" · ")}.`, payload.added?.length ? "success" : "");
+  loadReportRecipients();
+});
+
+reportEls.list?.addEventListener("submit", (event) => {
+  const form = event.target.closest("[data-report-edit-form]");
+  if (!form) return;
+  event.preventDefault();
+  saveReportEdit(form);
+});
+
+reportEls.list?.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !event.target.closest("[data-report-edit-form]")) return;
+  reportEditingId = null;
+  renderReportRecipients();
+});
+
+reportEls.list?.addEventListener("click", async (event) => {
+  const edit = event.target.closest("[data-report-edit]");
+  if (edit) {
+    reportEditingId = Number(edit.dataset.reportEdit);
+    setReportMessage("");
+    renderReportRecipients();
+    return;
+  }
+  if (event.target.closest("[data-report-cancel]")) {
+    reportEditingId = null;
+    renderReportRecipients();
+    return;
+  }
+  const btn = event.target.closest("[data-report-remove]");
+  if (!btn) return;
+  const id = Number(btn.dataset.reportRemove);
+  const person = reportRecipients.find((r) => Number(r.id) === id);
+  if (!window.confirm(`Stop sending the daily report to ${person?.email || "this address"}?`)) return;
+  btn.disabled = true;
+  const { ok, payload } = await reportRequest(`${REPORT_ENDPOINT}/delete`, { method: "POST", body: { id } });
+  if (!ok) { btn.disabled = false; setReportMessage(payload.error || "Could not remove that address.", "error"); return; }
+  setReportMessage(`Removed ${payload.email}. They will not get further reports.`, "success");
+  loadReportRecipients();
+});
+
+reportEls.sendBtn?.addEventListener("click", async () => {
+  const date = reportEls.sendDate?.value || "";
+  const count = reportRecipients.length;
+  if (!count) { setReportMessage("Add at least one email address first.", "error"); return; }
+  if (!window.confirm(`Email the ${date ? reportDateLabel(date) : "latest"} report to all ${count} ${count === 1 ? "recipient" : "recipients"} now?`)) return;
+  reportEls.sendBtn.disabled = true;
+  setReportMessage(`Sending to ${count}…`);
+  const { ok, payload } = await reportRequest("/api/reports/send-now", { method: "POST", body: { date } });
+  reportEls.sendBtn.disabled = false;
+  if (!ok) { setReportMessage(payload.error || "The report could not be sent.", "error"); return; }
+  const failed = payload.failedCount
+    ? ` ${payload.failedCount} failed — ${payload.failures?.[0]?.email}: ${payload.failures?.[0]?.error}`
+    : "";
+  setReportMessage(`Sent the ${reportDateLabel(payload.date)} report to ${payload.sentCount}.${failed}`, payload.failedCount ? "error" : "success");
+});
+
 async function loadAnalytics({ force = false } = {}) {
   if (!analyticsView || !state.user) return;
   if (!canReviewRole(state.user.role)) return;
@@ -9943,6 +10227,7 @@ async function loadAnalytics({ force = false } = {}) {
     renderAnalyticsDonut(analytics.summary);
     renderAnalyticsBreakdowns(analytics);
     renderAnalyticsCategoryPie(analytics.categories);
+    loadReportRecipients();
 
     /* "full" gets the team roster and the reviewer table — both QA and admin
        now, since QA works the queue and needs to see whose posts are piling

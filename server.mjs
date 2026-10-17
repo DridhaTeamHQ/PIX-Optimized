@@ -16,7 +16,7 @@ import {
   configureDb, isConfigured as dbConfigured, ping as dbPing,
   getPix, setApproval,
   claimPublish, recordPublishedId, recordPublishAttempt, releasePublishClaim, readQuery,
-  recordWebPages,
+  recordWebPages, getPixAnalytics,
 } from "./lib/db.js";
 import {
   SESSION_COOKIE, parseCookies, sessionCookie, clearedSessionCookie,
@@ -48,6 +48,13 @@ import {
   extractBestArticleImage,
   upgradeImageToHighestQuality as upgradeScrapedImage,
 } from "./lib/scrape.js";
+import { brevoConfig, sendBrevoEmail } from "./lib/brevo.js";
+import {
+  addRecipients, claimReportRun, deleteRecipient, finishReportRun, lastReportRun, listRecipients,
+  updateRecipient,
+} from "./lib/report-recipients.js";
+import { cleanEmail, cleanName, recipientsFromFile } from "./lib/recipient-file.js";
+import { REPORT_HOUR_IST, reportDateFor, sendDailyReport, startDailyReportSchedule } from "./lib/daily-report.js";
 
 const root = join(process.cwd(), "public");
 const port = Number(process.env.PORT || 3000);
@@ -573,6 +580,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.url?.startsWith("/api/users")) {
     await handleUsers(req, res);
+    return;
+  }
+
+  if (req.url?.startsWith("/api/report-recipients") || req.url?.startsWith("/api/reports/")) {
+    await handleReports(req, res);
     return;
   }
 
@@ -2739,6 +2751,188 @@ async function handlePixAnalytics(req, res) {
   const query = new URL(req.url, "http://localhost").searchParams;
   const result = await handlePixAnalyticsRequest({ user, query });
   sendJson(res, result.status, result.body);
+}
+
+/* ── Daily report email ──
+   The previous day's Breakdown stats, emailed at 9:00 IST to a list admins
+   keep — see lib/daily-report.js. Everything here is admin-only: reading the
+   list, adding to it, removing from it and sending a report on demand. */
+
+function reportEmailConfig() {
+  return brevoConfig({
+    BREVO_API_KEY: env("BREVO_API_KEY"),
+    BREVO_SENDER_EMAIL: env("BREVO_SENDER_EMAIL"),
+    BREVO_SENDER_NAME: env("BREVO_SENDER_NAME"),
+  });
+}
+
+/* DailyMattr owns the category names; the database only stores their ids.
+   If DailyMattr cannot be reached the report still goes out, with ids. */
+async function reportCategoryNames() {
+  const meta = await fetchDailyMattrMeta(dailyMattrConfig());
+  return new Map((meta.categories || []).map((c) => [String(c.id), String(c.name)]));
+}
+
+const reportDeps = {
+  isReady: () => dbConfigured() && reportEmailConfig().ready,
+  listRecipients,
+  claimRun: claimReportRun,
+  finishRun: finishReportRun,
+  // The same query, filters and role as the Breakdown page for that one day.
+  getAnalytics: (date) => getPixAnalytics({ role: "admin", scope: "basic", from: date, to: date }),
+  getCategoryNames: reportCategoryNames,
+  send: (message) => sendBrevoEmail(reportEmailConfig(), message),
+  // The email's pie charts are images and need a public address; without
+  // storage the email goes out with its tables and bars only.
+  uploadChart: (key, png) => (isStorageConfigured()
+    ? uploadMedia(key, png, "image/png")
+    : Promise.reject(new Error("Storage is not configured."))),
+};
+
+startDailyReportSchedule(reportDeps);
+
+function readRawBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(Object.assign(new Error("That file is too large."), { status: 413 }));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+async function reportStatus() {
+  const email = reportEmailConfig();
+  return {
+    email: { ready: email.ready, missing: email.missing, sender: email.ready ? email.senderEmail : null },
+    schedule: { hourIst: REPORT_HOUR_IST, nextReportDate: reportDateFor() },
+    lastRun: await lastReportRun(),
+  };
+}
+
+const recipientJson = (r) => ({
+  id: Number(r.id), email: r.email, name: r.name, addedBy: r.added_by, createdAt: r.created_at,
+});
+
+async function handleReports(req, res) {
+  const user = await currentUser(req);
+  if (!user) { sendJson(res, 401, { error: "Sign in first." }); return; }
+  if (!isAdmin(user.role)) { sendJson(res, 403, { error: "Only an admin can manage the report list." }); return; }
+  if (!dbConfigured()) { sendJson(res, 503, { error: "The database is not configured." }); return; }
+
+  const parsed = new URL(req.url, `http://localhost:${port}`);
+  const path = parsed.pathname.replace(/\/+$/, "");
+  const by = user.displayName || user.username || null;
+
+  try {
+    if (req.method === "GET" && path === "/api/report-recipients") {
+      const rows = await listRecipients();
+      sendJson(res, 200, { recipients: rows.map(recipientJson), ...(await reportStatus()) });
+      return;
+    }
+    if (req.method !== "POST") { sendJson(res, 405, { error: "Method not allowed." }); return; }
+
+    /* A CSV or Excel file, sent as the raw request body with its name in
+       the query string — no multipart needed for a single small file. */
+    if (path === "/api/report-recipients/import") {
+      const body = await readRawBody(req, 5 * 1024 * 1024);
+      if (!body.length) { sendJson(res, 400, { error: "The file is empty." }); return; }
+      let parsedFile;
+      try {
+        parsedFile = recipientsFromFile(body, parsed.searchParams.get("filename") || "");
+      } catch (err) {
+        sendJson(res, 400, { error: err.message });
+        return;
+      }
+      if (!parsedFile.recipients.length) {
+        sendJson(res, 400, { error: "No email addresses were found in that file.", skipped: parsedFile.skipped.slice(0, 50) });
+        return;
+      }
+      const result = await addRecipients(parsedFile.recipients, by);
+      console.log(`✓ ${user.username} imported ${result.added.length} report recipient(s)`);
+      sendJson(res, 200, {
+        added: result.added.map(recipientJson),
+        existing: result.existing,
+        skipped: parsedFile.skipped.slice(0, 50),
+        skippedCount: parsedFile.skipped.length,
+      });
+      return;
+    }
+
+    const body = await readJson(req, { limit: 10_000 });
+
+    if (path === "/api/report-recipients") {
+      const email = cleanEmail(body?.email);
+      if (!email) { sendJson(res, 400, { error: "Enter a valid email address." }); return; }
+      const result = await addRecipients([{ email, name: cleanName(body?.name) }], by);
+      if (!result.added.length) { sendJson(res, 409, { error: `${email} is already on the list.` }); return; }
+      console.log(`✓ ${user.username} added ${email} to the report list`);
+      sendJson(res, 201, { recipient: recipientJson(result.added[0]) });
+      return;
+    }
+
+    if (path === "/api/report-recipients/update") {
+      const id = Number(body?.id);
+      if (!Number.isInteger(id) || id <= 0) { sendJson(res, 400, { error: "Which recipient?" }); return; }
+      const email = cleanEmail(body?.email);
+      if (!email) { sendJson(res, 400, { error: "Enter a valid email address." }); return; }
+      try {
+        const row = await updateRecipient(id, { email, name: cleanName(body?.name) });
+        if (!row) { sendJson(res, 404, { error: "That address is no longer on the list." }); return; }
+        console.log(`✓ ${user.username} edited report recipient ${id} (${email})`);
+        sendJson(res, 200, { recipient: recipientJson(row) });
+      } catch (err) {
+        // The unique index on email: the new address is someone else's row.
+        if (err?.code === "23505") sendJson(res, 409, { error: `${email} is already on the list.` });
+        else throw err;
+      }
+      return;
+    }
+
+    if (path === "/api/report-recipients/delete") {
+      const id = Number(body?.id);
+      if (!Number.isInteger(id) || id <= 0) { sendJson(res, 400, { error: "Which recipient?" }); return; }
+      const removed = await deleteRecipient(id);
+      if (!removed) { sendJson(res, 404, { error: "That address is no longer on the list." }); return; }
+      console.log(`✓ ${user.username} removed ${removed.email} from the report list`);
+      sendJson(res, 200, { ok: true, email: removed.email });
+      return;
+    }
+
+    /* Send a report now, outside the schedule — for a first look, or to
+       resend a day. It does not count as that day's scheduled send. */
+    if (path === "/api/reports/send-now") {
+      const config = reportEmailConfig();
+      if (!config.ready) { sendJson(res, 503, { error: `Email is not configured. Missing: ${config.missing.join(", ")}.` }); return; }
+      const requested = String(body?.date || "");
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) && !Number.isNaN(Date.parse(requested)) ? requested : reportDateFor();
+      const recipients = await listRecipients();
+      if (!recipients.length) { sendJson(res, 400, { error: "Add at least one email address first." }); return; }
+      const result = await sendDailyReport({ date, recipients, deps: reportDeps });
+      console.log(`✓ ${user.username} sent the ${date} report: ${result.sentCount} sent, ${result.failedCount} failed`);
+      sendJson(res, result.sentCount ? 200 : 502, {
+        date,
+        sentCount: result.sentCount,
+        failedCount: result.failedCount,
+        failures: result.failures.slice(0, 20),
+        ...(result.sentCount ? {} : { error: result.failures[0]?.error || "Nothing was sent." }),
+      });
+      return;
+    }
+
+    sendJson(res, 404, { error: "Unknown report route." });
+  } catch (err) {
+    console.warn("⚠ report list failed:", err.message);
+    sendJson(res, err.status || 500, { error: err.message || "Could not complete that." });
+  }
 }
 
 /* ── Image AI audit ──

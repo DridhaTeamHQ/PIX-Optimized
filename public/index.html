@@ -1385,11 +1385,22 @@
         <div class="analytics-card-head">
           <div>
             <span class="analytics-card-label">Breakdown</span>
-            <h3>Category share</h3>
-            <p class="analytics-roster-desc">Each category's share of sent posts. Hover a slice for its count.</p>
+            <h3>Sent to QA by category</h3>
+            <p class="analytics-roster-desc">Each category's share of the posts sent to QA. Hover a slice for details.</p>
           </div>
         </div>
         <div class="analytics-pie" id="analytics-category-pie"></div>
+      </article>
+
+      <article class="analytics-card analytics-chart-card">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Breakdown</span>
+            <h3>Approved by QA by category</h3>
+            <p class="analytics-roster-desc">Each category's share of the posts QA approved. Same colours as the sent pie.</p>
+          </div>
+        </div>
+        <div class="analytics-pie" id="analytics-approved-pie"></div>
       </article>
     </section>
 
@@ -1414,6 +1425,54 @@
           </div>
         </div>
         <div class="analytics-bars" id="analytics-sources"></div>
+      </article>
+    </section>
+
+    <!-- The daily report list. Admin-only: only an admin may add or remove the
+         people who receive the emailed Breakdown report. -->
+    <section class="analytics-grid analytics-report-grid admin-only" data-analytics-page="breakdown">
+      <article class="analytics-card analytics-report-card" id="report-card">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Email report</span>
+            <h3>Daily report recipients</h3>
+            <p class="analytics-roster-desc">Every day at 9:00 AM IST, the previous day's Breakdown is emailed to everyone on this list, with an Excel file of the tables and charts attached.</p>
+          </div>
+          <span class="report-status" id="report-status" role="status"></span>
+        </div>
+
+        <div class="report-tools">
+          <form class="report-add" id="report-add-form" novalidate>
+            <label class="field">
+              <span class="field-label">Email</span>
+              <input type="email" id="report-add-email" placeholder="name@company.com" autocomplete="off" required />
+            </label>
+            <label class="field">
+              <span class="field-label">Name <small>(optional)</small></span>
+              <input type="text" id="report-add-name" placeholder="Full name" autocomplete="off" />
+            </label>
+            <button type="submit" class="btn-primary" id="report-add-btn">Add</button>
+          </form>
+
+          <div class="report-import">
+            <input type="file" id="report-import-file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+            <button type="button" class="btn-secondary" id="report-import-btn">Import CSV or Excel</button>
+            <span class="report-hint">Needs an email column. A name column is optional.</span>
+          </div>
+        </div>
+
+        <p class="report-message" id="report-message" role="status" aria-live="polite"></p>
+
+        <div class="report-list" id="report-list"></div>
+
+        <div class="report-send">
+          <label class="field">
+            <span class="field-label">Send a report now for</span>
+            <input type="date" id="report-send-date" />
+          </label>
+          <button type="button" class="btn-ghost" id="report-send-btn">Send report now</button>
+          <span class="report-hint" id="report-last-run"></span>
+        </div>
       </article>
     </section>
 

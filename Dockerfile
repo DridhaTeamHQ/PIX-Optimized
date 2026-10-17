@@ -18,8 +18,11 @@ ENV NODE_ENV=production \
 # ffmpeg does the trimming and overlay compositing.
 # ca-certificates + wget are needed to fetch yt-dlp and for its TLS calls.
 # unzip is for the deno archive below.
+# fonts-dejavu-core gives the report email's pie charts their labels: they are
+# drawn with sharp, and a slim image has no fonts, so the numbers would render
+# as nothing (lib/report-charts.js).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg ca-certificates wget unzip \
+      ffmpeg ca-certificates wget unzip fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 
 # ── JavaScript runtime for yt-dlp ──
