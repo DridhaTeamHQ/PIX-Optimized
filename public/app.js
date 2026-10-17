@@ -9091,6 +9091,169 @@ function renderAnalyticsBreakdowns(analytics = {}) {
   });
 }
 
+/* ── Category share pie ──────────────────────────────────────────────────────
+   Each category's share of the posts sent in the current filters, so the
+   biggest sections read at a glance. Pointing at a slice — or its legend row,
+   or tabbing to it — pops up the category, its post count and its share.
+
+   Eight hues at most (see .analytics-pie in revamp.css). With more categories
+   than that, the smallest fold into one grey "Other" slice rather than taking
+   a generated ninth hue nobody could tell from its neighbours; the legend
+   still lists every one of them, by name, under "Other". */
+const CATEGORY_PIE_SLOTS = 8;
+const CATEGORY_PIE = { size: 240, radius: 110, labelAt: 0.64, labelMin: 0.08 };
+
+function formatShare(fraction) {
+  const pct = fraction * 100;
+  if (pct > 0 && pct < 1) return "<1%";
+  return `${pct < 10 ? pct.toFixed(1).replace(/\.0$/, "") : Math.round(pct)}%`;
+}
+
+function renderAnalyticsCategoryPie(categories = []) {
+  const host = document.getElementById("analytics-category-pie");
+  if (!host) return;
+  host.classList.remove("has-focus");
+
+  const rows = (categories || [])
+    .map((c) => ({ label: categoryName(c.category_id), count: Number(c.sent_count) || 0 }))
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
+  if (!total) {
+    host.innerHTML = `<div class="analytics-empty">Nothing sent in this range.</div>`;
+    return;
+  }
+
+  const folds = rows.length > CATEGORY_PIE_SLOTS;
+  const named = folds ? rows.slice(0, CATEGORY_PIE_SLOTS - 1) : rows;
+  const rest = folds ? rows.slice(CATEGORY_PIE_SLOTS - 1) : [];
+  const slices = named.map((row, i) => ({ ...row, tone: `var(--cat-${i + 1})`, members: [] }));
+  if (rest.length) {
+    slices.push({
+      label: "Other",
+      count: rest.reduce((sum, row) => sum + row.count, 0),
+      tone: "var(--cat-other)",
+      members: rest,
+    });
+  }
+
+  // Clockwise from twelve o'clock, largest first.
+  const { size, radius: r } = CATEGORY_PIE;
+  const c = size / 2;
+  const at = (angle, dist = r) => [c + dist * Math.cos(angle), c + dist * Math.sin(angle)];
+  let angle = -Math.PI / 2;
+  for (const slice of slices) {
+    slice.share = slice.count / total;
+    slice.start = angle;
+    angle += slice.share * Math.PI * 2;
+    slice.end = angle;
+    slice.mid = (slice.start + slice.end) / 2;
+  }
+
+  const shapes = slices.map((slice, i) => {
+    const attrs = `class="analytics-pie-slice" data-slice="${i}" style="fill:${slice.tone}" tabindex="0"
+      role="img" aria-label="${escapeHtml(slice.label)}: ${formatCount(slice.count)} posts, ${formatShare(slice.share)}"`;
+    // One category on its own is the whole circle; an arc from a point back to
+    // itself draws nothing.
+    if (slice.share >= 0.9999) return `<circle cx="${c}" cy="${c}" r="${r}" ${attrs}></circle>`;
+    const [x0, y0] = at(slice.start);
+    const [x1, y1] = at(slice.end);
+    const large = slice.end - slice.start > Math.PI ? 1 : 0;
+    return `<path d="M${c},${c} L${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 ${large} 1 ${x1.toFixed(2)},${y1.toFixed(2)} Z" ${attrs}></path>`;
+  }).join("");
+
+  // Percentages printed on the slices big enough to hold them; the legend
+  // carries every one regardless.
+  const labels = slices.map((slice, i) => {
+    if (slice.share < CATEGORY_PIE.labelMin) return "";
+    const [lx, ly] = slice.share >= 0.9999 ? [c, c] : at(slice.mid, r * CATEGORY_PIE.labelAt);
+    return `<text class="analytics-pie-label" data-slice="${i}" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}"
+      text-anchor="middle" dominant-baseline="central">${formatShare(slice.share)}</text>`;
+  }).join("");
+
+  const legendRow = (row, i, grouped = false) => `
+    <li data-slice="${i}" class="${grouped ? "is-grouped" : ""}" style="--analytics-tone:${slices[i].tone}">
+      <span title="${escapeHtml(row.label)}">${escapeHtml(row.label)}</span>
+      <strong>${formatCount(row.count)}</strong>
+      <small>${formatShare(row.count / total)}</small>
+    </li>`;
+  const legend = slices.map((slice, i) =>
+    legendRow(slice, i) + slice.members.map((member) => legendRow(member, i, true)).join("")).join("");
+
+  host.innerHTML = `
+    <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="group"
+         aria-label="Category share of ${formatCount(total)} sent posts">
+      ${shapes}${labels}
+    </svg>
+    <ul class="analytics-pie-legend">${legend}</ul>
+    <div class="analytics-tooltip" hidden></div>`;
+
+  const svg = host.querySelector("svg");
+  const tip = host.querySelector(".analytics-tooltip");
+  const members = (i) => host.querySelectorAll(`[data-slice="${i}"]`);
+
+  const placeTip = (x, y) => {
+    // Below-right of the pointer, flipped back inside the card near its edges.
+    const pad = 14;
+    let left = x + pad;
+    let top = y + pad;
+    if (left + tip.offsetWidth > host.clientWidth) left = x - tip.offsetWidth - pad;
+    if (top + tip.offsetHeight > host.clientHeight) top = y - tip.offsetHeight - pad;
+    tip.style.left = `${Math.max(0, left)}px`;
+    tip.style.top = `${Math.max(0, top)}px`;
+  };
+  const sliceCentre = (i) => {
+    const box = svg.getBoundingClientRect();
+    const hostBox = host.getBoundingClientRect();
+    const [sx, sy] = slices[i].share >= 0.9999 ? [c, c] : at(slices[i].mid, r * CATEGORY_PIE.labelAt);
+    const k = box.width / size;
+    return [box.left - hostBox.left + sx * k, box.top - hostBox.top + sy * k];
+  };
+
+  let active = -1;
+  const show = (i, point) => {
+    if (active !== i) {
+      host.querySelectorAll(".is-active").forEach((node) => node.classList.remove("is-active"));
+      members(i).forEach((node) => node.classList.add("is-active"));
+      host.classList.add("has-focus");
+      active = i;
+      const slice = slices[i];
+      const inOther = slice.members.length
+        ? `<em class="analytics-tooltip-note">${slice.members.length} smaller categories</em>`
+        : "";
+      tip.innerHTML = `<strong>${escapeHtml(slice.label)}</strong>
+        <span style="--analytics-tone:${slice.tone}">Posts<b>${formatCount(slice.count)}</b></span>
+        <span style="--analytics-tone:${slice.tone}">Share<b>${formatShare(slice.share)}</b></span>
+        ${inOther}`;
+      tip.hidden = false;
+    }
+    placeTip(...(point || sliceCentre(i)));
+  };
+  const hide = () => {
+    host.querySelectorAll(".is-active").forEach((node) => node.classList.remove("is-active"));
+    host.classList.remove("has-focus");
+    tip.hidden = true;
+    active = -1;
+  };
+  const pointer = (event) => {
+    const box = host.getBoundingClientRect();
+    return [event.clientX - box.left, event.clientY - box.top];
+  };
+
+  host.querySelectorAll(".analytics-pie-slice").forEach((node) => {
+    const i = Number(node.dataset.slice);
+    node.addEventListener("pointermove", (event) => show(i, pointer(event)));
+    node.addEventListener("pointerleave", hide);
+    node.addEventListener("focus", () => show(i));
+    node.addEventListener("blur", hide);
+  });
+  host.querySelectorAll(".analytics-pie-legend li").forEach((node) => {
+    const i = Number(node.dataset.slice);
+    node.addEventListener("pointerenter", () => show(i));
+    node.addEventListener("pointerleave", hide);
+  });
+}
+
 function renderAnalyticsBoard(container, rows, { empty, valueLabel, showRate = false, rateField = "approval_rate", approvedField = "approved_count", pendingField = "pending_count" }) {
   if (!container) return;
   if (!rows?.length) {
@@ -9779,6 +9942,7 @@ async function loadAnalytics({ force = false } = {}) {
     renderAnalyticsTrend(analytics.trend || null);
     renderAnalyticsDonut(analytics.summary);
     renderAnalyticsBreakdowns(analytics);
+    renderAnalyticsCategoryPie(analytics.categories);
 
     /* "full" gets the team roster and the reviewer table — both QA and admin
        now, since QA works the queue and needs to see whose posts are piling
