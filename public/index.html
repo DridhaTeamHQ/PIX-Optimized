@@ -1211,10 +1211,21 @@
     <p class="status-text" id="analytics-status" role="status" aria-live="polite"></p>
 
     <section class="analytics-filterbar" aria-label="Analytics filters">
-      <div class="analytics-filterbar-copy">
-        <span class="analytics-card-label">View</span>
-        <strong>Filter the whole dashboard</strong>
-        <span id="analytics-filter-summary">All sources · All categories · All dates</span>
+      <div class="analytics-filterbar-top">
+        <div class="analytics-filterbar-copy">
+          <span class="analytics-card-label">View</span>
+          <strong>Filter the whole dashboard</strong>
+          <span id="analytics-filter-summary">All sources · All categories · All dates</span>
+        </div>
+        <!-- One-click ranges. They fill the two date inputs and apply, so the
+             inputs always show what the dashboard is actually reading. -->
+        <div class="analytics-quick-ranges" role="group" aria-label="Quick date ranges">
+          <button type="button" class="analytics-quick-range" data-range="0">Today</button>
+          <button type="button" class="analytics-quick-range" data-range="7">7 days</button>
+          <button type="button" class="analytics-quick-range" data-range="30">30 days</button>
+          <button type="button" class="analytics-quick-range" data-range="90">90 days</button>
+          <button type="button" class="analytics-quick-range" data-range="all">All time</button>
+        </div>
       </div>
       <div class="analytics-filterbar-controls">
         <div class="analytics-roster-filter">
@@ -1257,7 +1268,16 @@
       </div>
     </section>
 
-    <section class="analytics-hero">
+    <!-- One dashboard, four pages. The filter bar above stays put and drives
+         every page, so switching pages never loses the view being read. -->
+    <nav class="analytics-pages" role="tablist" aria-label="Analytics pages">
+      <button type="button" class="analytics-page-tab is-active" role="tab" data-analytics-tab="overview" aria-selected="true">Overview</button>
+      <button type="button" class="analytics-page-tab" role="tab" data-analytics-tab="breakdown" aria-selected="false">Breakdown</button>
+      <button type="button" class="analytics-page-tab" role="tab" data-analytics-tab="team" aria-selected="false">Team</button>
+      <button type="button" class="analytics-page-tab" role="tab" data-analytics-tab="posts" aria-selected="false">Posts</button>
+    </nav>
+
+    <section class="analytics-hero" data-analytics-page="overview">
       <div class="analytics-stat-card accent-a">
         <span class="analytics-stat-label">Sent</span>
         <strong class="analytics-stat-value" data-analytics-value="sent">0</strong>
@@ -1285,7 +1305,7 @@
       </div>
     </section>
 
-    <section class="analytics-today-card" aria-labelledby="analytics-today-title">
+    <section class="analytics-today-card" aria-labelledby="analytics-today-title" data-analytics-page="overview">
       <div class="analytics-today-intro">
         <div class="analytics-today-kicker-row">
           <span class="analytics-card-label">Today</span>
@@ -1319,7 +1339,36 @@
       </div>
     </section>
 
-    <section class="analytics-grid analytics-meta-grid">
+    <section class="analytics-chart-grid" data-analytics-page="overview">
+      <article class="analytics-card analytics-chart-card">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Trend</span>
+            <h3>Activity over time</h3>
+            <p class="analytics-roster-desc" id="analytics-trend-desc">Posts sent and QA decisions per day.</p>
+          </div>
+          <div class="analytics-legend" aria-hidden="true">
+            <span class="tone-sent">Sent</span>
+            <span class="tone-approved">Approved</span>
+            <span class="tone-rejected">Rejected</span>
+          </div>
+        </div>
+        <div class="analytics-trend" id="analytics-trend"></div>
+      </article>
+
+      <article class="analytics-card analytics-chart-card">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Pipeline</span>
+            <h3>Status mix</h3>
+            <p class="analytics-roster-desc">Where every sent post stands now.</p>
+          </div>
+        </div>
+        <div class="analytics-donut" id="analytics-donut"></div>
+      </article>
+    </section>
+
+    <section class="analytics-grid analytics-meta-grid" data-analytics-page="overview">
       <article class="analytics-card analytics-meta-card">
         <div class="analytics-card-head">
           <div>
@@ -1331,7 +1380,31 @@
       </article>
     </section>
 
-      <section class="analytics-grid analytics-roster-grid">
+    <section class="analytics-chart-grid analytics-breakdown-grid" data-analytics-page="breakdown">
+      <article class="analytics-card analytics-chart-card">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Breakdown</span>
+            <h3>By category</h3>
+            <p class="analytics-roster-desc">Sent posts per section, split by verdict. Click one to filter.</p>
+          </div>
+        </div>
+        <div class="analytics-bars" id="analytics-categories"></div>
+      </article>
+
+      <article class="analytics-card analytics-chart-card">
+        <div class="analytics-card-head">
+          <div>
+            <span class="analytics-card-label">Breakdown</span>
+            <h3>Top sources</h3>
+            <p class="analytics-roster-desc">Where stories are coming from. Click one to filter.</p>
+          </div>
+        </div>
+        <div class="analytics-bars" id="analytics-sources"></div>
+      </article>
+    </section>
+
+      <section class="analytics-grid analytics-roster-grid" data-analytics-page="team">
         <article class="analytics-card analytics-roster-card" id="analytics-roster-card">
           <div class="analytics-card-head analytics-roster-head">
             <div>
@@ -1357,7 +1430,7 @@
         </article>
       </section>
 
-    <section class="analytics-grid analytics-board-grid">
+    <section class="analytics-grid analytics-board-grid" data-analytics-page="posts">
       <!-- Recent content, each row naming its writer. The roster above says who
            is producing overall; this says who wrote THIS story, and opens it. -->
       <article class="analytics-card analytics-card-wide">

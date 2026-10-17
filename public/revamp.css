@@ -3082,3 +3082,381 @@ a.imageai-shot:hover img {
     white-space: normal;
   }
 }
+
+/* ─── Analytics: filter bar, charts and breakdowns ─────────────
+   The filter bar used to sit its title and its controls side by side in a
+   fixed 0.42/1.58 grid. The controls never wrapped, so on a laptop-width
+   screen they ran over the "Filter the whole dashboard" title. The title row
+   now sits on top and the controls wrap underneath at any width. */
+.analytics-filterbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.analytics-filterbar-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.analytics-filterbar-controls {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.analytics-quick-ranges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 11px;
+  background: var(--surface-input);
+}
+
+.analytics-quick-range {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.analytics-quick-range:hover {
+  color: var(--text-primary);
+}
+
+.analytics-quick-range.is-active {
+  background: var(--surface-solid, #fff);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.analytics-chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.analytics-breakdown-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.analytics-chart-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.analytics-chart-card .analytics-card-head {
+  margin: 0;
+  align-items: flex-start;
+}
+
+.analytics-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.analytics-legend span::before,
+.analytics-donut-legend li::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 3px;
+  background: var(--analytics-tone);
+  vertical-align: -1px;
+}
+
+.analytics-legend span {
+  white-space: nowrap;
+}
+
+.tone-sent { --analytics-tone: #3979ff; }
+.tone-approved { --analytics-tone: #10a879; }
+.tone-rejected { --analytics-tone: #e45e6d; }
+.tone-pending { --analytics-tone: #e79a25; }
+
+.analytics-trend {
+  position: relative;
+  min-height: 240px;
+}
+
+.analytics-trend svg {
+  display: block;
+  overflow: visible;
+}
+
+.analytics-grid-line {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.analytics-axis-text {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-cursor {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.analytics-tooltip {
+  position: absolute;
+  top: 8px;
+  z-index: 2;
+  display: grid;
+  gap: 4px;
+  min-width: 150px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface-solid, #fff);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  color: var(--text-primary);
+  font-size: 0.74rem;
+  pointer-events: none;
+}
+
+.analytics-tooltip[hidden] {
+  display: none;
+}
+
+.analytics-tooltip strong {
+  margin-bottom: 2px;
+  font-size: 0.76rem;
+}
+
+.analytics-tooltip span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.analytics-tooltip span::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--analytics-tone);
+}
+
+.analytics-tooltip b {
+  margin-left: auto;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-donut {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 18px 24px;
+  flex: 1;
+}
+
+.analytics-donut svg {
+  flex: none;
+}
+
+.analytics-donut-track {
+  stroke: var(--surface-input);
+}
+
+.analytics-donut-total {
+  fill: var(--text-primary);
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+}
+
+.analytics-donut-legend {
+  display: grid;
+  gap: 10px;
+  min-width: 150px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analytics-donut-legend li {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.analytics-donut-legend li::before {
+  margin: 0;
+}
+
+.analytics-donut-legend span {
+  color: var(--text-secondary);
+}
+
+.analytics-donut-legend strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-donut-legend small {
+  min-width: 34px;
+  color: var(--text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-bars {
+  display: grid;
+  gap: 4px;
+}
+
+.analytics-bar-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.3fr) minmax(60px, 1.7fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.analytics-bar-row:hover {
+  background: var(--surface-input);
+}
+
+.analytics-bar-row.is-active {
+  border-color: var(--accent);
+  background: var(--surface-input);
+}
+
+.analytics-bar-label {
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-bar-track {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-input);
+}
+
+.analytics-bar-track > span {
+  height: 100%;
+  background: var(--analytics-tone);
+}
+
+.analytics-bar-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 56px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-bar-value small {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 550;
+}
+
+@media (max-width: 1100px) {
+  .analytics-chart-grid,
+  .analytics-breakdown-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .analytics-quick-ranges {
+    width: 100%;
+  }
+
+  .analytics-quick-range {
+    flex: 1;
+    padding: 0 6px;
+  }
+
+  .analytics-bar-row {
+    grid-template-columns: minmax(70px, 0.8fr) minmax(0, 1.4fr) auto;
+    gap: 8px;
+  }
+}
+
+/* Analytics pages: a segmented tab strip under the filter bar. Sections set
+   their own display, so `hidden` needs this to win over it. */
+[data-analytics-page][hidden] {
+  display: none !important;
+}
+
+.analytics-pages {
+  display: flex;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-card);
+  scrollbar-width: none;
+}
+
+.analytics-page-tab {
+  flex: 1 0 auto;
+  min-height: 38px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.analytics-page-tab:hover {
+  color: var(--text-primary);
+  background: var(--surface-input);
+}
+
+.analytics-page-tab.is-active {
+  background: var(--accent);
+  color: #fff;
+}

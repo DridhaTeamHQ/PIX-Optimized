@@ -8777,14 +8777,21 @@ function renderAnalyticsSummary(summary = {}, role = "writer") {
       ? `${formatCount(summary.active_writers || 0)} writers active in the pipeline`
       : "Posts you have sent into the workflow";
   }
+  /* Each verdict as a share of what was sent, which is the comparison the
+     cards are read for. "Approved by you" only means something to a
+     reviewer who works the queue; on an admin it read a permanent 0. */
+  const sent = Number(summary.sent_count) || 0;
+  const shareOfSent = (n) => (sent ? `${Math.round(((Number(n) || 0) * 100) / sent)}%` : "0%");
   if (approvedSub) {
-    approvedSub.textContent = canReviewRole(role)
-      ? `${formatCount(summary.approved_by_me_count || 0)} approved by you`
-      : "Posts QA has approved";
+    approvedSub.textContent = !canReviewRole(role)
+      ? "Posts QA has approved"
+      : role === "qa"
+        ? `${shareOfSent(summary.approved_count)} of sent · ${formatCount(summary.approved_by_me_count || 0)} by you`
+        : `${shareOfSent(summary.approved_count)} of sent · ${formatCompactNumber(summary.published_count || 0)} published`;
   }
   if (rejectedSub) {
     rejectedSub.textContent = canReviewRole(role)
-      ? "Returned to writers for changes"
+      ? `${shareOfSent(summary.rejected_count)} of sent, returned for changes`
       : "Posts QA returned for changes";
   }
   if (pendingSub) {
@@ -8804,10 +8811,12 @@ function renderAnalyticsMeta(summary = {}, role = "writer") {
   analyticsMetaTitle.textContent = canReviewRole(role) ? "Approval health" : "Your pipeline health";
   const items = canReviewRole(role)
     ? [
+        ["Published", formatCount(summary.published_count || 0)],
+        ["Publish rate", `${summary.approved_count
+          ? Math.round(((Number(summary.published_count) || 0) * 100) / Number(summary.approved_count))
+          : 0}% of approved`],
         ["Active writers", formatCount(summary.active_writers || 0)],
         ["Active QA reviewers", formatCount(summary.active_qas || 0)],
-        ["Approved by you", formatCount(summary.approved_by_me_count || 0)],
-        ["Avg approval time", `${Number(summary.avg_approval_hours || 0).toFixed(1)} hrs`],
       ]
     : [
         ["Posts sent", formatCount(summary.sent_count || 0)],
@@ -8822,6 +8831,264 @@ function renderAnalyticsMeta(summary = {}, role = "writer") {
       <strong class="analytics-metric-value">${value}</strong>
     </div>
   `).join("");
+}
+
+/* ─── Charts ───────────────────────────────────────────────
+   Hand-drawn SVG rather than a chart library: three small charts do not
+   justify a dependency, and drawing at the container's real pixel width
+   keeps text and strokes crisp instead of stretched by a viewBox. */
+const SVG_NS = "http://www.w3.org/2000/svg";
+const ANALYTICS_TONES = { sent: "#3979ff", approved: "#10a879", rejected: "#e45e6d", pending: "#e79a25" };
+let analyticsTrendData = null;
+
+function trendLabel(day, unit, { long = false } = {}) {
+  const date = new Date(`${day}T12:00:00+05:30`);
+  const fmt = new Intl.DateTimeFormat("en-IN", {
+    day: "numeric", month: "short", ...(long ? { weekday: unit === "day" ? "short" : undefined, year: "numeric" } : {}),
+    timeZone: "Asia/Kolkata",
+  }).format(date);
+  return unit === "week" ? `Week of ${fmt}` : fmt;
+}
+
+/* Round an axis maximum up to a 1/2/5 step so gridlines land on numbers a
+   person would pick. */
+function niceAxisMax(value) {
+  if (value <= 4) return 4;
+  const step = 10 ** Math.floor(Math.log10(value / 4));
+  const nice = [1, 2, 2.5, 5, 10].find((m) => (m * step * 4) >= value) || 10;
+  return nice * step * 4;
+}
+
+function renderAnalyticsTrend(trend = analyticsTrendData) {
+  const host = document.getElementById("analytics-trend");
+  if (!host) return;
+  analyticsTrendData = trend;
+  const points = trend?.points || [];
+  host.textContent = "";
+
+  const desc = document.getElementById("analytics-trend-desc");
+  if (desc && trend) {
+    const per = trend.unit === "week" ? "week" : "day";
+    desc.textContent = `Posts sent and QA decisions per ${per}, ${trendLabel(trend.from, "day")} – ${trendLabel(trend.to, "day")}.`;
+  }
+
+  if (!points.length || points.every((p) => !p.sent && !p.approved && !p.rejected)) {
+    host.innerHTML = `<div class="analytics-empty">No activity in this range.</div>`;
+    return;
+  }
+
+  const width = Math.max(280, host.clientWidth || 600);
+  const height = 240;
+  const pad = { top: 12, right: 12, bottom: 28, left: 40 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const max = niceAxisMax(Math.max(...points.flatMap((p) => [p.sent, p.approved, p.rejected])));
+  const step = points.length > 1 ? innerW / (points.length - 1) : 0;
+  const x = (i) => pad.left + (points.length > 1 ? i * step : innerW / 2);
+  const y = (v) => pad.top + innerH - (v / max) * innerH;
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", width);
+  svg.setAttribute("height", height);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Line chart of posts sent, approved and rejected over time");
+  const el = (tag, attrs) => {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    svg.appendChild(node);
+    return node;
+  };
+
+  for (let i = 0; i <= 4; i += 1) {
+    const value = (max / 4) * i;
+    el("line", { x1: pad.left, x2: width - pad.right, y1: y(value), y2: y(value), class: "analytics-grid-line" });
+    el("text", { x: pad.left - 8, y: y(value) + 4, "text-anchor": "end", class: "analytics-axis-text" })
+      .textContent = formatCompactNumber(value);
+  }
+
+  // Around six date labels whatever the range, always including the last.
+  const every = Math.max(1, Math.ceil(points.length / 6));
+  points.forEach((p, i) => {
+    if (i % every && i !== points.length - 1) return;
+    if (i !== points.length - 1 && points.length - 1 - i < every / 2) return;
+    el("text", { x: x(i), y: height - 8, "text-anchor": i === 0 ? "start" : i === points.length - 1 ? "end" : "middle", class: "analytics-axis-text" })
+      .textContent = trendLabel(p.day, "day");
+  });
+
+  const line = (key) => points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join("");
+  el("path", {
+    d: `${line("sent")}L${x(points.length - 1).toFixed(1)},${y(0)}L${x(0).toFixed(1)},${y(0)}Z`,
+    fill: ANALYTICS_TONES.sent, "fill-opacity": "0.08", stroke: "none",
+  });
+  for (const key of ["rejected", "approved", "sent"]) {
+    el("path", { d: line(key), fill: "none", stroke: ANALYTICS_TONES[key], "stroke-width": key === "sent" ? 2.5 : 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
+  }
+
+  const cursor = el("line", { y1: pad.top, y2: pad.top + innerH, class: "analytics-cursor", visibility: "hidden" });
+  const dots = ["sent", "approved", "rejected"].map((key) =>
+    [key, el("circle", { r: 4, fill: ANALYTICS_TONES[key], stroke: "var(--surface-card, #fff)", "stroke-width": 2, visibility: "hidden" })]);
+
+  const tip = document.createElement("div");
+  tip.className = "analytics-tooltip";
+  tip.hidden = true;
+
+  const show = (i) => {
+    const p = points[i];
+    cursor.setAttribute("x1", x(i));
+    cursor.setAttribute("x2", x(i));
+    cursor.setAttribute("visibility", "visible");
+    for (const [key, dot] of dots) {
+      dot.setAttribute("cx", x(i));
+      dot.setAttribute("cy", y(p[key]));
+      dot.setAttribute("visibility", "visible");
+    }
+    tip.innerHTML = `<strong>${escapeHtml(trendLabel(p.day, trend.unit, { long: true }))}</strong>
+      ${["sent", "approved", "rejected"].map((key) =>
+        `<span class="tone-${key}">${key[0].toUpperCase()}${key.slice(1)}<b>${formatCount(p[key])}</b></span>`).join("")}`;
+    tip.hidden = false;
+    // Right of the cursor, flipping to the left near the chart's right edge.
+    let left = x(i) + 12;
+    if (left + tip.offsetWidth > width) left = x(i) - tip.offsetWidth - 12;
+    tip.style.left = `${Math.max(0, left)}px`;
+  };
+  const hide = () => {
+    cursor.setAttribute("visibility", "hidden");
+    for (const [, dot] of dots) dot.setAttribute("visibility", "hidden");
+    tip.hidden = true;
+  };
+  const hit = el("rect", { x: pad.left, y: pad.top, width: innerW, height: innerH, fill: "transparent" });
+  hit.addEventListener("pointermove", (event) => {
+    const box = svg.getBoundingClientRect();
+    const i = step ? Math.round((event.clientX - box.left - pad.left) / step) : 0;
+    show(Math.min(points.length - 1, Math.max(0, i)));
+  });
+  hit.addEventListener("pointerleave", hide);
+
+  host.append(svg, tip);
+}
+
+// The chart is drawn at the card's pixel width, so it is redrawn when that changes.
+if (typeof ResizeObserver === "function") {
+  let lastTrendWidth = 0;
+  const trendHost = document.getElementById("analytics-trend");
+  if (trendHost) {
+    new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect.width);
+      if (w && w !== lastTrendWidth && analyticsTrendData) {
+        lastTrendWidth = w;
+        renderAnalyticsTrend();
+      }
+    }).observe(trendHost);
+  }
+}
+
+function renderAnalyticsDonut(summary = {}) {
+  const host = document.getElementById("analytics-donut");
+  if (!host) return;
+  const parts = [
+    ["approved", "Approved", Number(summary.approved_count) || 0],
+    ["rejected", "Rejected", Number(summary.rejected_count) || 0],
+    ["pending", "Pending", Number(summary.pending_count) || 0],
+  ];
+  const total = parts.reduce((sum, [, , n]) => sum + n, 0);
+  if (!total) {
+    host.innerHTML = `<div class="analytics-empty">Nothing sent in this range.</div>`;
+    return;
+  }
+
+  const r = 62;
+  const circumference = 2 * Math.PI * r;
+  let offset = 0;
+  const arcs = parts.map(([key, , n]) => {
+    const length = (n / total) * circumference;
+    // A hairline gap between segments, unless a segment is too thin to spare it.
+    const gap = length > 4 ? 2 : 0;
+    const arc = `<circle cx="80" cy="80" r="${r}" fill="none" stroke="${ANALYTICS_TONES[key]}" stroke-width="18"
+      stroke-dasharray="${Math.max(0, length - gap)} ${circumference}" stroke-dashoffset="${-offset}"
+      transform="rotate(-90 80 80)"></circle>`;
+    offset += length;
+    return arc;
+  }).join("");
+
+  host.innerHTML = `
+    <svg viewBox="0 0 160 160" width="160" height="160" role="img"
+         aria-label="${parts.map(([, label, n]) => `${label} ${formatCount(n)}`).join(", ")}">
+      <circle cx="80" cy="80" r="${r}" fill="none" class="analytics-donut-track" stroke-width="18"></circle>
+      ${arcs}
+      <text x="80" y="78" text-anchor="middle" class="analytics-donut-total">${formatCompactNumber(total)}</text>
+      <text x="80" y="98" text-anchor="middle" class="analytics-axis-text">posts sent</text>
+    </svg>
+    <ul class="analytics-donut-legend">
+      ${parts.map(([key, label, n]) => `
+        <li class="tone-${key}">
+          <span>${label}</span>
+          <strong>${formatCount(n)}</strong>
+          <small>${Math.round((n * 100) / total)}%</small>
+        </li>`).join("")}
+    </ul>`;
+}
+
+function categoryName(id) {
+  if (id === null || id === undefined) return "Uncategorised";
+  const match = (sectionCategories || []).find((c) => String(c.id) === String(id));
+  return match ? String(match.name) : `Category ${id}`;
+}
+
+/* Horizontal bars, one row per item, each a button that applies that item as
+   the dashboard filter — the quickest way from "this section is big" to
+   "show me only this section". */
+function renderAnalyticsBars(host, rows, { onPick, activeValue }) {
+  if (!host) return;
+  host.textContent = "";
+  if (!rows.length) {
+    host.innerHTML = `<div class="analytics-empty">No data in this range.</div>`;
+    return;
+  }
+  const max = Math.max(...rows.map((row) => row.total)) || 1;
+  for (const row of rows) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "analytics-bar-row" + (row.value === activeValue ? " is-active" : "");
+    item.title = row.value === activeValue ? "Showing only this — click to clear" : `Show only ${row.label}`;
+    const segments = (row.segments || [["sent", row.total]])
+      .filter(([, n]) => n > 0)
+      .map(([key, n]) => `<span class="tone-${key}" style="width:${((n / max) * 100).toFixed(2)}%"></span>`)
+      .join("");
+    item.innerHTML = `
+      <span class="analytics-bar-label">${escapeHtml(row.label)}</span>
+      <span class="analytics-bar-track">${segments}</span>
+      <span class="analytics-bar-value">${formatCount(row.total)}${row.note ? `<small>${escapeHtml(row.note)}</small>` : ""}</span>`;
+    item.addEventListener("click", () => onPick(row.value === activeValue ? "all" : row.value));
+    host.appendChild(item);
+  }
+}
+
+function renderAnalyticsBreakdowns(analytics = {}) {
+  const categories = (analytics.categories || []).slice(0, 10).map((c) => ({
+    value: c.category_id === null || c.category_id === undefined ? UNCATEGORISED : String(c.category_id),
+    label: categoryName(c.category_id),
+    total: Number(c.sent_count) || 0,
+    note: c.sent_count ? `${Math.round((Number(c.approved_count) * 100) / Number(c.sent_count))}% approved` : "",
+    segments: [
+      ["approved", Number(c.approved_count) || 0],
+      ["rejected", Number(c.rejected_count) || 0],
+      ["pending", Number(c.pending_count) || 0],
+    ],
+  }));
+  renderAnalyticsBars(document.getElementById("analytics-categories"), categories, {
+    activeValue: analyticsFilters.category,
+    onPick: (value) => setCategoryValue(value),
+  });
+
+  const sources = (analytics.sources || []).slice(0, 10).map((s) => ({
+    value: String(s.value || "").toLowerCase(),
+    label: String(s.value || ""),
+    total: Number(s.post_count) || 0,
+  })).filter((s) => s.value);
+  renderAnalyticsBars(document.getElementById("analytics-sources"), sources, {
+    activeValue: analyticsFilters.source,
+    onPick: (value) => setSourceValue(value),
+  });
 }
 
 function renderAnalyticsBoard(container, rows, { empty, valueLabel, showRate = false, rateField = "approval_rate", approvedField = "approved_count", pendingField = "pending_count" }) {
@@ -8875,7 +9142,72 @@ function syncAnalyticsFilterSummary() {
   const to = analyticsFilterDate(analyticsFilters.to);
   const dates = from && to ? `${from} – ${to}` : from ? `From ${from}` : to ? `Until ${to}` : "All dates";
   analyticsFilterSummary.textContent = `${source} · ${category} · ${dates}`;
+  syncQuickRanges();
 }
+
+/* Today's date on the India calendar, as the YYYY-MM-DD a date input holds. */
+function istDateKey(offsetDays = 0) {
+  const at = new Date(Date.now() - offsetDays * 86400000);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(at);
+}
+
+function quickRangeDates(range) {
+  if (range === "all") return { from: "", to: "" };
+  const days = Number(range) || 0;
+  return { from: istDateKey(Math.max(0, days - 1)), to: istDateKey(0) };
+}
+
+// Lights the chip whose range is exactly what the filters hold, if any.
+function syncQuickRanges() {
+  document.querySelectorAll(".analytics-quick-range").forEach((chip) => {
+    const { from, to } = quickRangeDates(chip.dataset.range);
+    const on = analyticsFilters.from === from && analyticsFilters.to === to;
+    chip.classList.toggle("is-active", on);
+    chip.setAttribute("aria-pressed", String(on));
+  });
+}
+
+/* Analytics pages. Every section carries data-analytics-page; only the
+   chosen page's sections show. All of them are still filled on each load, so
+   switching pages is instant and needs no refetch. The choice is remembered
+   per browser, which is a convenience only — any failure falls back to
+   Overview. */
+const ANALYTICS_PAGE_KEY = "pix.analyticsPage";
+
+function setAnalyticsPage(page) {
+  const tabs = [...document.querySelectorAll(".analytics-page-tab")];
+  const chosen = tabs.find((tab) => tab.dataset.analyticsTab === page) || tabs[0];
+  if (!chosen) return;
+  const current = chosen.dataset.analyticsTab;
+  tabs.forEach((tab) => {
+    const on = tab === chosen;
+    tab.classList.toggle("is-active", on);
+    tab.setAttribute("aria-selected", String(on));
+  });
+  document.querySelectorAll("[data-analytics-page]").forEach((section) => {
+    section.hidden = section.dataset.analyticsPage !== current;
+  });
+  try { localStorage.setItem(ANALYTICS_PAGE_KEY, current); } catch { /* storage blocked */ }
+}
+
+document.querySelectorAll(".analytics-page-tab").forEach((tab) => {
+  tab.addEventListener("click", () => setAnalyticsPage(tab.dataset.analyticsTab));
+});
+setAnalyticsPage((() => {
+  try { return localStorage.getItem(ANALYTICS_PAGE_KEY) || "overview"; } catch { return "overview"; }
+})());
+
+document.querySelectorAll(".analytics-quick-range").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    const { from, to } = quickRangeDates(chip.dataset.range);
+    analyticsFilters.from = from;
+    analyticsFilters.to = to;
+    if (analyticsFrom) analyticsFrom.value = from;
+    if (analyticsTo) analyticsTo.value = to;
+    syncAnalyticsFilterSummary();
+    loadAnalytics({ force: true });
+  });
+});
 
 /* Copy for each side of the toggle. The writer view counts verdicts on what a
    writer sent; the QA view counts verdicts a reviewer recorded. */
@@ -9444,6 +9776,9 @@ async function loadAnalytics({ force = false } = {}) {
     renderAnalyticsSummary(analytics.summary, role);
     renderAnalyticsDaily(analytics.daily);
     renderAnalyticsMeta(analytics.summary, role);
+    renderAnalyticsTrend(analytics.trend || null);
+    renderAnalyticsDonut(analytics.summary);
+    renderAnalyticsBreakdowns(analytics);
 
     /* "full" gets the team roster and the reviewer table — both QA and admin
        now, since QA works the queue and needs to see whose posts are piling
