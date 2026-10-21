@@ -4321,6 +4321,15 @@ function applyPageScope(page) {
   setScope(tagPresetsContainer, scope.tag);
   setScope(document.getElementById("video-acc"), scope.video);
   setScope(imagePanel, scope.image);
+
+  /* The Video section restores collapsed at the foot of the panel, so on a
+     video page its trim, caption and mute controls were easy to never find.
+     Open it whenever a video page is selected. */
+  const videoAcc = document.getElementById("video-acc");
+  if (page.type === "video" && videoAcc && videoAcc.dataset.open !== "true") {
+    videoAcc.dataset.open = "true";
+    videoAcc.querySelector(":scope > .acc-head")?.setAttribute("aria-expanded", "true");
+  }
 }
 
 /* Push state back into the controls after a page switch — without this the
@@ -4359,6 +4368,7 @@ function syncEditorFromState() {
   syncControl(document.getElementById("video-caption-size"), state.videoCaptionSize);
   const muteInput = document.getElementById("video-mute");
   if (muteInput) muteInput.checked = !!state.videoMuted;
+  if (videoPreviewEl) videoPreviewEl.muted = !!state.videoMuted;
   const videoEditor = document.getElementById("video-editor");
   if (videoEditor) videoEditor.hidden = !(state.videoSrc || state.videoUrl || state.videoFile);
   syncTrimUI();
@@ -13040,6 +13050,8 @@ if (trimPlayBtn) {
 if (videoMuteInput) {
   videoMuteInput.addEventListener("change", () => {
     state.videoMuted = videoMuteInput.checked;
+    // Silence the preview too, so what QA hears is what gets published.
+    if (videoPreviewEl) videoPreviewEl.muted = state.videoMuted;
   });
 }
 
@@ -14313,7 +14325,11 @@ async function publishToDailyMattr({ skipConfirm = false } = {}) {
             );
             return;
           }
-          outboundMedia.push({ blob: clip, filename: `${slug}-p${n}.mp4` });
+          /* The server strips the audio track from a muted page before it
+             goes out, whatever clip was resolved above — a stored copy can
+             predate the mute and still carry sound. */
+          const muted = Boolean(primaryVideoContent().videoMuted);
+          outboundMedia.push({ blob: clip, filename: `${slug}-p${n}.mp4`, muted });
           continue;
         }
 
@@ -14430,7 +14446,8 @@ async function publishToDailyMattr({ skipConfirm = false } = {}) {
 
     // Numbered by position, so the pages are always 1..N with no gaps no
     // matter which of the optional items are present.
-    outboundMedia.forEach(({ blob, filename }, index) => {
+    outboundMedia.forEach(({ blob, filename, muted }, index) => {
+      if (muted) form.append(`mute_page_${index + 1}`, "true");
       form.append(`media_page_${index + 1}`, blob, filename);
     });
 

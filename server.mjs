@@ -3,7 +3,7 @@ import {
   createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync,
   readFileSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
-import { extname, join, normalize } from "node:path";
+import { delimiter, extname, join, normalize } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -885,6 +885,33 @@ if (LOCAL_DENO) console.log("✓ using local deno at .bin");
 // a clean startup error, which made it look unrelated to this line.
 let ffmpegAvailable = false;
 let ytdlpAvailable = false;
+
+/* A winget install of ffmpeg only adds its bin folder to the user PATH, so a
+   server started from a shell opened before the install cannot see it and
+   every video export and DailyMattr publish fails with "ffmpeg is not
+   installed". Find that folder (or FFMPEG_DIR) and put it on this process's
+   PATH, which covers ffmpeg and ffprobe alike. */
+(() => {
+  const hasFfmpeg = (dir) => dir && existsSync(join(dir, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"));
+  const onPath = (process.env.PATH || "").split(delimiter).some(hasFfmpeg);
+  if (onPath) return;
+  const candidates = [env("FFMPEG_DIR")];
+  const wingetRoot = process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Microsoft", "WinGet");
+  if (wingetRoot) {
+    candidates.push(join(wingetRoot, "Links"));
+    const pkgs = join(wingetRoot, "Packages");
+    try {
+      for (const pkg of readdirSync(pkgs).filter((n) => /ffmpeg/i.test(n))) {
+        for (const build of readdirSync(join(pkgs, pkg))) candidates.push(join(pkgs, pkg, build, "bin"));
+      }
+    } catch { /* no winget packages folder */ }
+  }
+  const found = candidates.find(hasFfmpeg);
+  if (found) {
+    process.env.PATH = `${found}${delimiter}${process.env.PATH || ""}`;
+    console.log(`✓ using ffmpeg from ${found}`);
+  }
+})();
 let jsRuntimeAvailable = false;
 (async () => {
   const [ff, yt, deno] = await Promise.all([
@@ -1941,6 +1968,45 @@ const COMPRESS_AUDIO_BPS = 128_000;
    The output is also VERIFIED against the cap rather than merely compared
    against the input: -maxrate is a rate-control hint, not a guarantee, so
    "smaller than it was" was never the same as "small enough". */
+/* Drop the audio track from a clip QA muted.
+
+   The clip encode already passes -an when muted, but the clip that reaches
+   publish is not always a fresh encode: a stored bucket copy is reused when
+   its key matches, and rows saved before the key recorded what the copy was
+   rendered with are trusted as-is — so a copy cut with sound could go out
+   under a muted post. This is the last point before DailyMattr, so the
+   guarantee lives here. Video is stream-copied, so it costs no quality and
+   a fraction of a second. */
+async function stripAudioForDailyMattr(file) {
+  if (!file.muted || !/^video\//i.test(file.contentType || "")) return file;
+  if (!ffmpegAvailable) {
+    throw new Error("the video is muted but ffmpeg is not installed on this server to remove its audio");
+  }
+
+  const dir = join(tmpdir(), `pix-mute-${randomUUID().replace(/-/g, "")}`);
+  mkdirSync(dir, { recursive: true });
+  const inPath = join(dir, "in.mp4");
+  const outPath = join(dir, "out.mp4");
+  try {
+    writeFileSync(inPath, file.buffer);
+    const enc = await run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-y", "-i", inPath,
+      "-map", "0:v", "-c", "copy", "-an",
+      "-movflags", "+faststart",
+      outPath,
+    ], COMPRESS_TIMEOUT_MS);
+    if (enc.code !== 0 || !existsSync(outPath)) {
+      throw new Error(`the muted video's audio could not be removed: ${enc.stderr.toString("utf-8").slice(-160) || `exit ${enc.code}`}`);
+    }
+    const silent = readFileSync(outPath);
+    if (!silent.length) throw new Error("removing the muted video's audio produced an empty file");
+    console.log(`✓ stripped audio from muted ${file.fieldName}`);
+    return { ...file, buffer: silent };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function compressForDailyMattr(file) {
   if (DAILYMATTR_TARGET_VIDEO_BYTES <= 0) return file;
   if (!/^video\//i.test(file.contentType || "")) return file;
@@ -2233,7 +2299,9 @@ async function runDailyMattrPublish(req, res) {
   try {
     // Applies to every video part whatever its origin — a freshly rendered
     // clip, the stored copy from our bucket, or a file QA attached by hand.
-    payload.files = await Promise.all(payload.files.map(compressForDailyMattr));
+    payload.files = await Promise.all(
+      payload.files.map(async (f) => compressForDailyMattr(await stripAudioForDailyMattr(f))),
+    );
   } catch (err) {
     console.warn("⚠ DailyMattr publish failed before sending (media preparation):", err.message);
     if (claimed) await releasePublishClaim(payload.pixId).catch(() => {});
@@ -2493,7 +2561,8 @@ function readDailyMattrPublish(req) {
     try {
       bb = Busboy({
         headers: req.headers,
-        limits: { files: 5, fileSize: MAX_DAILYMATTR_MEDIA_BYTES, fields: 12 },
+        // 12 post fields plus a mute_page_N flag for each of the five pages.
+        limits: { files: 5, fileSize: MAX_DAILYMATTR_MEDIA_BYTES, fields: 17 },
       });
     } catch (err) {
       reject(new Error("Malformed upload: " + err.message));
@@ -2563,7 +2632,10 @@ function readDailyMattrPublish(req) {
            this is the one field that unlocks putting a second copy on a site
            we cannot delete from. */
         republish: fields.republish === "true",
-        files: files.sort((a, b) => a.page - b.page),
+        // Pages QA muted on the Video page; their audio is stripped before sending.
+        files: files
+          .map((f) => ({ ...f, muted: fields[`mute_page_${f.page}`] === "true" }))
+          .sort((a, b) => a.page - b.page),
       });
     });
 

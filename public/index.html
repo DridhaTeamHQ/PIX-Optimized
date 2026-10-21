@@ -944,6 +944,11 @@
             <div id="video-editor" hidden>
               <video id="video-preview" class="video-preview" playsinline preload="metadata" controls></video>
 
+              <label class="checkbox-row">
+                <input type="checkbox" id="video-mute" />
+                <span>Mute audio — publish this video without sound</span>
+              </label>
+
               <h3 class="acc-subtitle">Trim</h3>
               <div class="trim-readout">
                 <span id="trim-start-label">0:00.0</span>
@@ -970,11 +975,6 @@
               <label class="slider-container" style="margin-top:10px;">
                 <span class="slider-label">Size</span>
                 <input type="range" id="video-caption-size" min="24" max="72" step="1" value="48" />
-              </label>
-
-              <label class="checkbox-row">
-                <input type="checkbox" id="video-mute" />
-                <span>Mute audio</span>
               </label>
 
               <button type="button" id="video-export-btn" class="btn-primary btn-export">
