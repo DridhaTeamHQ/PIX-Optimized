@@ -222,8 +222,10 @@ console.log("\nserver.mjs wires it up");
   ck("the paid path caches BEFORE it answers, so a lost response is recoverable",
      server.indexOf("enhanceCacheSet(cacheKey, payload, png)")
        < server.indexOf("return { ...payload, image: publishEnhanceResult(png) }"));
+  // `let`, because Face Lock may hand back corrected bytes in its place.
   ck("the base64 is decoded once and carried as bytes",
-     /const png = Buffer\.from\(b64, "base64"\)/.test(server));
+     /(const|let) png = Buffer\.from\(b64, "base64"\)/.test(server)
+       && server.split('Buffer.from(b64, "base64")').length === 2);
   ck("no data: URL is built into the payload any more",
      !/image: `data:image\/png;base64,\$\{b64\}`/.test(server));
 }

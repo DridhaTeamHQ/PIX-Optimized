@@ -37,6 +37,8 @@ import {
 } from "./lib/image-actions.js";
 import { imageSize } from "./lib/image-size.js";
 import { planHdUpscale, decodeRgb, cropForModel, hdDetailTransfer, hdFinish } from "./lib/hd-upscale.js";
+import { createFaceDetector } from "./lib/face-detect.js";
+import { lockFaces } from "./lib/face-lock.js";
 import { copyCardsToWeb } from "./lib/web-cards.js";
 import {
   fetchDailyMattrMeta, getDailyMattrConfig, publishDailyMattrBuzzContent,
@@ -6305,7 +6307,23 @@ async function runEnhanceEdit({
      only ever the transport OpenAI chose; carrying it any further means
      holding the picture at 133% of its size and handing the browser the same
      surcharge. */
-  const png = Buffer.from(b64, "base64");
+  let png = Buffer.from(b64, "base64");
+
+  /* The real faces back in — see lib/face-lock.js. Reframe and the plain
+     restore both hand back a redraw in which every face was drawn again, and
+     the reviewers' comparison of a reframe against its source showed two
+     different people. HD Upscale is left out because it already rebuilds
+     from the original (hdDetailTransfer), and expand because the browser
+     pastes the source back over its middle. Before the cache, so a repeat
+     press gets the corrected picture too. */
+  let faces = null;
+  if (job === "reframe" || (job === "restore" && !restorePrompt)) {
+    const locked = await faceLockResult(buffer, png, job);
+    if (locked) {
+      faces = locked.stats;
+      if (locked.png) png = locked.png;
+    }
+  }
 
   /* No `image` field: it is not a property of the result, it is an address
      issued per request. See publishEnhanceResult() — a cache hit has to be
@@ -6344,6 +6362,11 @@ async function runEnhanceEdit({
        job ran, which must not be mistaken for the planner choosing it. */
     decidedBy,
     reason: jobReason,
+    /* Face Lock's account: faces found in each picture, how many were put
+       back, kept as drawn or skipped, and why. Null when it did not run. The
+       browser turns it into the status line's last sentence, because a face
+       it could not match is one the reviewer has to look at. */
+    faces,
   };
 
   /* Store only what a repeat of this exact request would get. The per-request
@@ -6834,6 +6857,49 @@ async function loadSharp() {
     try { sharpLib = (await import("sharp")).default; } catch { sharpLib = null; }
   }
   return sharpLib;
+}
+
+/* ── Face Lock's detector ──
+   YuNet through onnxruntime-node (lib/face-detect.js), loaded on the first
+   press that needs it and kept. FACE_LOCK=0 switches the whole repair off;
+   a missing runtime or model file switches it off too, and says so once in
+   the log, so a reframe is never refused for want of it. */
+const FACE_LOCK_MODEL = join(process.cwd(), "models", "face_detection_yunet_2023mar.onnx");
+const faceLockOff = /^(0|false|no|off)$/i.test(env("FACE_LOCK"));
+let faceDetectorReady;
+function loadFaceDetector() {
+  if (faceLockOff) return Promise.resolve(null);
+  faceDetectorReady ??= createFaceDetector({ modelPath: FACE_LOCK_MODEL })
+    .then((detector) => {
+      if (!detector) console.warn(`⚠ Face Lock is off: needs onnxruntime-node and ${FACE_LOCK_MODEL}`);
+      return detector;
+    })
+    .catch((err) => {
+      console.warn(`⚠ Face Lock is off: the face detector would not load — ${err.message}`);
+      return null;
+    });
+  return faceDetectorReady;
+}
+
+/* The redraw with the original's faces laid back in, or null when Face Lock
+   is not available or failed. A failure costs the repair and nothing else:
+   the reviewer still gets the redraw they paid for. */
+async function faceLockResult(source, redraw, job) {
+  const [sharp, detector] = await Promise.all([loadSharp(), loadFaceDetector()]);
+  if (!sharp || !detector) return null;
+  try {
+    const locked = await lockFaces(sharp, source, redraw, { detector });
+    const s = locked.stats;
+    console.log(
+      `✓ Face Lock on ${job}: ${s.original} face(s) in the original, ${s.redraw} in the redraw — ` +
+      `${s.replaced} replaced, ${s.kept} kept, ${s.skipped} skipped (${s.ms}ms)` +
+      (s.faces.some((f) => f.reason) ? ` [${s.faces.filter((f) => f.reason).map((f) => f.reason).join("; ")}]` : ""),
+    );
+    return locked;
+  } catch (err) {
+    console.warn(`⚠ Face Lock failed on this ${job}; the redraw is kept as drawn: ${err.message}`);
+    return null;
+  }
 }
 
 async function upscaleWithSharp(buffer, { maxLongEdge, jpeg }) {

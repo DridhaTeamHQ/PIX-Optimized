@@ -11250,8 +11250,8 @@ const ENHANCE_WORKING = {
    about to pick, so it has to move with the selector. */
 const ENHANCE_MODE_HINTS = {
   auto: "Runs Reframe: the whole picture redrawn at the poster's shape. Uses paid AI credits.",
-  restore: "AI Upscale improves THIS photo — sharper detail, less noise and blur, same framing, same people. OpenAI rebuilds the pixels, so faces come back recognisably the same rather than pixel-identical. Sends the photo at 1024px to keep the cost down. Paid, roughly $0.10 a click. Try Free Upscale first.",
-  reframe: "The same thing as asking ChatGPT to 'upscale and reframe it to 9:16': one gpt-image-1.5 call at medium quality redraws the whole scene at the poster's shape, seamless, with more of the setting above and below. It is a regeneration — faces and fine detail come back recognisably the same, not pixel-identical. Use Expand to keep the photograph pinned exactly. About $0.12-0.15 a picture — the uploaded photo is billed as well as the output.",
+  restore: "AI Upscale improves THIS photo — sharper detail, less noise and blur, same framing, same people. OpenAI rebuilds the pixels, then the original faces are laid back in, so the people stay the people in your photo. Sends the photo at 1024px to keep the cost down. Paid, roughly $0.10 a click. Try Free Upscale first.",
+  reframe: "The same thing as asking ChatGPT to 'upscale and reframe it to 9:16': one gpt-image-1.5 call at medium quality redraws the whole scene at the poster's shape, seamless, with more of the setting above and below. It is a regeneration, so the original faces are then laid back into it; a face the AI redrew in a new pose is left as drawn and named in the status line. Use Expand to keep the photograph pinned exactly. About $0.12-0.15 a picture — the uploaded photo is billed as well as the output.",
   expand: "Draws new scene outward past the edges of the photograph to fill the poster. The original is pinned in place by a mask, but the margin is generated — check the result before publishing. Costs more than Restore.",
 };
 
@@ -12496,7 +12496,9 @@ async function runImageAI(modeOverride) {
       : (data.cost ? ` — $${data.cost.usd.toFixed(3)}` : "");
     say(
       `✓ ${label.done}${fitted} via ${engineLabel}${billed}${why}. Re-pick a stock image to undo.` +
-      smallPhotoNote(rawW, rawH),
+      // Once the original faces are back in, "faces may not match" is no longer true.
+      (data.faces?.replaced || data.faces?.kept ? "" : smallPhotoNote(rawW, rawH)) +
+      faceLockNote(data.faces),
       "success",
     );
   } catch (err) {
@@ -12630,6 +12632,22 @@ function smallPhotoNote(w, h) {
   return Math.max(w, h) < AI_SMALL_PHOTO_EDGE
     ? ` Small photo (${w}x${h}): faces may not match the original — a larger copy gives a better result.`
     : "";
+}
+
+/* What Face Lock did (lib/face-lock.js), as the status line's last sentence.
+   Silent when it did not run or there were no faces: a landscape has nothing
+   to report. A face it could not put back is said out loud, because that is
+   the one the reviewer has to look at before publishing. */
+function faceLockNote(faces) {
+  if (!faces || !faces.original || !faces.redraw) return "";
+  const matched = (faces.replaced || 0) + (faces.kept || 0);
+  const missed = faces.skipped || 0;
+  if (!matched && !missed) {
+    return faces.paired ? "" : " The faces in the redraw could not be matched to the original — check them before publishing.";
+  }
+  const total = matched + missed;
+  return (matched ? ` Faces match the original (${matched} of ${total}).` : "") +
+    (missed ? ` ${missed} ${missed === 1 ? "face" : "faces"} could not be restored from the original and ${missed === 1 ? "was" : "were"} left as the AI drew ${missed === 1 ? "it" : "them"} — check before publishing.` : "");
 }
 
 /* The server's test (planHdUpscale in lib/hd-upscale.js), for the status
