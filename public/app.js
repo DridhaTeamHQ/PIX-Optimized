@@ -10041,11 +10041,18 @@ async function saveReportEdit(form) {
 
 function renderReportStatus(payload = {}) {
   const email = payload.email || {};
+  const sendsHere = payload.schedule?.enabled !== false;
   if (reportEls.status) {
-    reportEls.status.textContent = email.ready
-      ? `${reportRecipients.length} ${reportRecipients.length === 1 ? "recipient" : "recipients"} · sends daily at ${payload.schedule?.hourIst ?? 9}:00 IST`
-      : `Email not set up — missing ${(email.missing || []).join(", ")}`;
-    reportEls.status.className = `report-status ${email.ready ? "is-ready" : "is-off"}`;
+    reportEls.status.textContent = !sendsHere
+      ? "Sending is off on this server — the live site sends the reports"
+      : email.ready
+        ? `${reportRecipients.length} ${reportRecipients.length === 1 ? "recipient" : "recipients"} · sends daily at ${payload.schedule?.hourIst ?? 9}:00 IST`
+        : `Email not set up — missing ${(email.missing || []).join(", ")}`;
+    reportEls.status.className = `report-status ${sendsHere && email.ready ? "is-ready" : "is-off"}`;
+  }
+  if (reportEls.sendBtn) {
+    reportEls.sendBtn.disabled = !sendsHere;
+    reportEls.sendBtn.title = sendsHere ? "" : "Reports are sent from the live site, not this server.";
   }
   if (reportEls.sendDate && !reportEls.sendDate.value && payload.schedule?.nextReportDate) {
     reportEls.sendDate.value = payload.schedule.nextReportDate;

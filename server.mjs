@@ -2845,8 +2845,14 @@ async function reportCategoryNames() {
   return new Map((meta.categories || []).map((c) => [String(c.id), String(c.name)]));
 }
 
+/* DAILY_REPORT_DISABLED=1 keeps this server from sending reports at all —
+   for a local copy pointed at the live database, so the emails go out from
+   the deployed server only. Read once at boot, like the other settings. */
+const dailyReportDisabled = /^(1|true|yes|on)$/i.test(env("DAILY_REPORT_DISABLED"));
+if (dailyReportDisabled) console.log("ℹ Daily report sending is off on this server (DAILY_REPORT_DISABLED).");
+
 const reportDeps = {
-  isReady: () => dbConfigured() && reportEmailConfig().ready,
+  isReady: () => !dailyReportDisabled && dbConfigured() && reportEmailConfig().ready,
   listRecipients,
   claimRun: claimReportRun,
   finishRun: finishReportRun,
@@ -2885,7 +2891,7 @@ async function reportStatus() {
   const email = reportEmailConfig();
   return {
     email: { ready: email.ready, missing: email.missing, sender: email.ready ? email.senderEmail : null },
-    schedule: { hourIst: REPORT_HOUR_IST, nextReportDate: reportDateFor() },
+    schedule: { hourIst: REPORT_HOUR_IST, nextReportDate: reportDateFor(), enabled: !dailyReportDisabled },
     lastRun: await lastReportRun(),
   };
 }
@@ -2982,6 +2988,10 @@ async function handleReports(req, res) {
     /* Send a report now, outside the schedule — for a first look, or to
        resend a day. It does not count as that day's scheduled send. */
     if (path === "/api/reports/send-now") {
+      if (dailyReportDisabled) {
+        sendJson(res, 409, { error: "Reports are not sent from this server (DAILY_REPORT_DISABLED is set). Send it from the live site." });
+        return;
+      }
       const config = reportEmailConfig();
       if (!config.ready) { sendJson(res, 503, { error: `Email is not configured. Missing: ${config.missing.join(", ")}.` }); return; }
       const requested = String(body?.date || "");
