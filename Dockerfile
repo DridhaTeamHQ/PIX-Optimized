@@ -51,12 +51,24 @@ RUN wget -q "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}
 WORKDIR /app
 
 # Dependencies first so a source-only change doesn't reinstall node_modules.
+# onnxruntime-node (Face Lock's detector) fetches CUDA GPU libraries from NuGet
+# on Linux by default — hundreds of MB this CPU-only server never loads.
+# It also ships its native runtime for every platform (287 MB); only this
+# container's own linux/<arch> build (44 MB on x64) is kept.
+ENV ONNXRUNTIME_NODE_INSTALL=skip
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev \
+ && keep="linux/$(node -p process.arch)" \
+ && for d in node_modules/onnxruntime-node/bin/napi-v*/*/*/; do \
+      case "$d" in *"/$keep/") ;; *) rm -rf "$d" ;; esac; \
+    done \
+ && ls node_modules/onnxruntime-node/bin/napi-v*/"$keep"/onnxruntime_binding.node
 
 COPY server.mjs ./
 COPY lib ./lib
 COPY public ./public
+# Face Lock's face detector (YuNet, OpenCV Zoo, MIT) — see lib/face-detect.js.
+COPY models ./models
 
 # Railway injects PORT; server.mjs reads it.
 CMD ["node", "server.mjs"]
