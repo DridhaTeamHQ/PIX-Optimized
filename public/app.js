@@ -10649,12 +10649,47 @@ function renderImageAi(payload) {
     summary.textContent = `${range} · ${person} · ${action ? IMAGE_ACTION_LABELS[action] : "All buttons"}`;
   }
 
-  /* AI Upscale was replaced by HD Upscale. Its column stays only for a range
-     that still has presses of it, so older dates still add up. */
-  const keys = IMAGE_AI_COUNT_KEYS.filter((k) => k !== "ai_upscale" || t.ai_upscale);
-  renderImageAiPeople(payload.people || [], keys);
-  renderImageAiPosts(payload.posts || [], keys);
-  renderImageAiEvents(payload.events || [], payload.previewDays);
+  /* A button's column shows only when the range has presses of it. The cards
+     above already say 0 for the rest, and a table that is mostly columns of
+     zeros hides the one number being looked for. This is also what keeps the
+     retired AI Upscale column away from recent dates. */
+  const keys = IMAGE_AI_COUNT_KEYS.filter((k) => t[k]);
+  const people = payload.people || [];
+  const posts = payload.posts || [];
+  const events = payload.events || [];
+  renderImageAiPeople(people, keys, Boolean(t.failed));
+  renderImageAiPosts(posts, keys);
+  renderImageAiEvents(events, payload.previewDays);
+
+  // The server stops at these row counts; a full page reads as "at least".
+  const counts = { people: [people.length, 200], posts: [posts.length, 100], presses: [events.length, 200] };
+  for (const [key, [n, cap]] of Object.entries(counts)) {
+    const el = imageAiView.querySelector(`[data-imageai-count="${key}"]`);
+    if (el) el.textContent = n >= cap ? `${formatCount(cap)}+` : formatCount(n);
+  }
+}
+
+/* People, Posts and Every press are pages of one report, like Analytics'
+   pages: only the chosen page's section shows, all three are filled on every
+   load, and the filters and cards above drive all of them. The choice is
+   remembered per browser, a convenience only — any failure falls back to
+   People. */
+const IMAGE_AI_PAGE_KEY = "pix.imageAiPage";
+
+function setImageAiPage(page) {
+  const tabs = [...document.querySelectorAll(".imageai-tab")];
+  const chosen = tabs.find((tab) => tab.dataset.imageaiTab === page) || tabs[0];
+  if (!chosen) return;
+  const current = chosen.dataset.imageaiTab;
+  tabs.forEach((tab) => {
+    const on = tab === chosen;
+    tab.classList.toggle("is-active", on);
+    tab.setAttribute("aria-selected", String(on));
+  });
+  document.querySelectorAll("[data-imageai-page]").forEach((section) => {
+    section.hidden = section.dataset.imageaiPage !== current;
+  });
+  try { localStorage.setItem(IMAGE_AI_PAGE_KEY, current); } catch { /* storage blocked */ }
 }
 
 const IMAGE_AI_COUNT_KEYS = ["hd_upscale", "reframe", "free_upscale", "undo", "ai_upscale"];
@@ -10669,7 +10704,8 @@ function imageAiCountHeads(keys) {
   return keys.map((k) => `<th class="num">${IMAGE_ACTION_LABELS[k]}</th>`).join("");
 }
 
-function renderImageAiPeople(rows, keys) {
+// "Didn't complete" is a column only when something in the range didn't.
+function renderImageAiPeople(rows, keys, showFailed) {
   const box = document.getElementById("imageai-people");
   if (!box) return;
   if (!rows.length) {
@@ -10680,19 +10716,35 @@ function renderImageAiPeople(rows, keys) {
     <table class="imageai-table">
       <thead><tr>
         <th>Person</th>${imageAiCountHeads(keys)}
-        <th class="num">Didn't complete</th><th class="num">OpenAI cost</th><th>Last press</th>
+        ${showFailed ? '<th class="num">Didn\'t complete</th>' : ""}<th class="num">OpenAI cost</th><th>Last press</th>
       </tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
           <td><button type="button" class="imageai-link" data-imageai-user="${escapeHtml(r.user_id || "")}"
                       ${r.user_id ? "" : "disabled"}>${escapeHtml(r.user_name)}</button></td>
           ${imageAiCountCells(r, keys)}
-          <td class="num${r.failed ? " is-warn" : " is-zero"}">${formatCount(r.failed || 0)}</td>
+          ${showFailed ? `<td class="num${r.failed ? " is-warn" : " is-zero"}">${formatCount(r.failed || 0)}</td>` : ""}
           <td class="num">${formatUsd(r.cost_usd)}</td>
           <td class="imageai-when">${escapeHtml(imageAiTime(r.last_at))}</td>
         </tr>`).join("")}
       </tbody>
     </table>`;
+}
+
+/* A set of story pages (a Daily Wrap and the like) has no post headline; the
+   server names it by a story instead. A press that recorded its own slide's
+   heading shows that; an older one shows the set's first story and how many
+   more the set holds, so it is not mistaken for a press on that one slide. */
+function imageAiHeadline(row, fallback) {
+  const more = row.headline_from === "set" && row.story_pages > 1 ? ` + ${row.story_pages - 1} more` : "";
+  return (row.headline || fallback) + more;
+}
+
+function imageAiKinds(row) {
+  return [
+    row.daily_wrap ? '<span class="imageai-kind is-wrap">Daily Wrap</span>' : "",
+    row.story_set ? `<span class="imageai-kind">Story set · ${formatCount(row.story_pages)} pages</span>` : "",
+  ].join("");
 }
 
 /* Where the post stands now, which is what tells an admin whether the money
@@ -10721,13 +10773,14 @@ function renderImageAiPosts(rows, keys) {
       </tr></thead>
       <tbody>${rows.map((r) => {
         const status = imageAiPostStatus(r);
-        const headline = r.headline || "(no headline)";
+        const headline = imageAiHeadline(r, "(no headline)");
         return `
         <tr>
           <td class="imageai-post">
             <span class="imageai-post-title" title="${escapeHtml(headline)}">${escapeHtml(headline)}</span>
             <span class="imageai-post-meta">
               <span class="status-pill ${status.cls}">${status.label}</span>
+              ${imageAiKinds(r)}
               ${r.writer_name ? `written by ${escapeHtml(r.writer_name)}` : ""}
             </span>
           </td>
@@ -10801,11 +10854,12 @@ function renderImageAiEvents(rows, previewDays) {
             <span class="imageai-chip action-${escapeHtml(e.action)}">${escapeHtml(IMAGE_ACTION_LABELS[e.action] || e.action)}${job}</span>
             <span class="imageai-outcome is-${escapeHtml(e.outcome)}">${escapeHtml(IMAGE_OUTCOME_LABELS[e.outcome] || e.outcome)}</span>
             <span class="imageai-when">${escapeHtml(imageAiTime(e.created_at))}</span>
+            ${imageAiKinds(e)}
           </div>
           <div class="imageai-event-who">
             <strong>${escapeHtml(e.user_name || "Unknown")}</strong>
             <span>on</span>
-            <span class="imageai-event-post">${escapeHtml(e.headline || (e.pix_id ? "(no headline)" : "an unsaved post"))}</span>
+            <span class="imageai-event-post">${escapeHtml(imageAiHeadline(e, e.pix_id ? "(no headline)" : "an unsaved post"))}</span>
           </div>
           ${facts ? `<div class="imageai-event-facts">${facts}</div>` : ""}
           ${e.error ? `<div class="imageai-event-error">${escapeHtml(e.error)}</div>` : ""}
@@ -10844,7 +10898,13 @@ if (imageAiView) {
       readImageAiInputs();
       imageAiFilters.post = post.dataset.imageaiPost;
       imageAiFilters.postLabel = post.dataset.imageaiPostLabel || "this post";
-      loadImageAi().then(() => document.getElementById("imageai-events")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      setImageAiPage("presses");
+      loadImageAi().then(() => document.querySelector(".imageai-pages")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      return;
+    }
+    const tab = e.target.closest(".imageai-tab");
+    if (tab) {
+      setImageAiPage(tab.dataset.imageaiTab);
       return;
     }
     const open = e.target.closest("[data-imageai-open]");
@@ -10853,6 +10913,9 @@ if (imageAiView) {
       openSavedPost(open.dataset.imageaiOpen);
     }
   });
+  setImageAiPage((() => {
+    try { return localStorage.getItem(IMAGE_AI_PAGE_KEY) || "people"; } catch { return "people"; }
+  })());
 }
 
 /* ── Routes ──
@@ -11139,6 +11202,22 @@ const aiReframeBtn    = document.getElementById("ai-reframe-btn");
 
    Fire-and-forget, and keepalive so a press made just before the tab closes
    still arrives. Nothing here may get in the way of the editor. */
+/* What AI Usage names a press by: the pressed page's own heading, then the
+   post's headline. A story page is its own story, and a set of them (a Daily
+   Wrap and the like) has no post headline at all — sending only the post's
+   left every press on one reading "(no headline)". Read off the page itself,
+   not `state`, because a paid press is still running when the writer has
+   moved on to another page. */
+function pressHeadline(page) {
+  const target = page || activePage();
+  const read = (field) => String((target.id === activePageId ? state[field] : target.content?.[field]) || "").trim();
+  const own = target.type === "story" ? read("storyHeading")
+    : target.type === "poster" || target.type === "base" ? read("headline")
+    : "";
+  const post = String((activePageId === basePage.id ? state.headline : basePage.content?.headline) || "").trim();
+  return (own || post).slice(0, 200);
+}
+
 function reportImageAction(action, outcome, { job = null, error = null, page = null, pixId = null } = {}) {
   if (!state.user) return;
   try {
@@ -11154,7 +11233,7 @@ function reportImageAction(action, outcome, { job = null, error = null, page = n
         error: error ? String(error).slice(0, 300) : null,
         pixId: pixId || null,
         pageId: page?.id || null,
-        headline: (state.headline || "").slice(0, 200),
+        headline: pressHeadline(page),
       }),
     }).catch(() => {});
   } catch { /* reporting is never worth an editor error */ }
@@ -11251,7 +11330,7 @@ const ENHANCE_WORKING = {
 const ENHANCE_MODE_HINTS = {
   auto: "Runs Reframe: the whole picture redrawn at the poster's shape. Uses paid AI credits.",
   restore: "AI Upscale improves THIS photo — sharper detail, less noise and blur, same framing, same people. OpenAI rebuilds the pixels, then the original faces are laid back in, so the people stay the people in your photo. Sends the photo at 1024px to keep the cost down. Paid, roughly $0.10 a click. Try Free Upscale first.",
-  reframe: "The same thing as asking ChatGPT to 'upscale and reframe it to 9:16': one gpt-image-1.5 call at medium quality redraws the whole scene at the poster's shape, seamless, with more of the setting above and below. It is a regeneration, so the original faces are then laid back into it; a face the AI redrew in a new pose is left as drawn and named in the status line. Use Expand to keep the photograph pinned exactly. About $0.12-0.15 a picture — the uploaded photo is billed as well as the output.",
+  reframe: "The same thing as asking ChatGPT to 'upscale and reframe it to 9:16': one gpt-image-2 call at medium quality redraws the whole scene at the poster's shape, seamless, with more of the setting above and below. It is a regeneration, so the original faces are then laid back into it; a face the AI redrew in a new pose is left as drawn and named in the status line. Use Expand to keep the photograph pinned exactly. About $0.05 a picture — the uploaded photo is billed as well as the output.",
   expand: "Draws new scene outward past the edges of the photograph to fill the poster. The original is pinned in place by a mask, but the margin is generated — check the result before publishing. Costs more than Restore.",
 };
 
@@ -12305,7 +12384,7 @@ async function runImageAI(modeOverride) {
     form.append("amount", amount);
     form.append("subject", plan.subject || "people");
     form.append("description", plan.description || "");
-    form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
+    form.append("headline", encodeURIComponent(pressHeadline(enhanceOwner)));
     form.append("posterRatio", state.aspectRatio || "");
     form.append("pageId", enhanceOwner?.id || "");
     form.append("pixId", pixIdAtPress);
@@ -12576,7 +12655,7 @@ async function runFreeUpscale() {
     // For the AI Usage audit, which the server records for every Free Upscale.
     form.append("pixId", pixIdAtPress);
     form.append("pageId", owner?.id || "");
-    form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
+    form.append("headline", encodeURIComponent(pressHeadline(owner)));
     form.append("image", upload.blob, upload.name);
     sent = true;
     const resp = await fetch("/api/free-upscale", { method: "POST", body: form });
@@ -12611,7 +12690,7 @@ document.getElementById("free-upscale-btn")?.addEventListener("click", () => run
 
 /* HD Upscale, through /api/hd-upscale — the paid upscale button (it replaced
    AI Upscale). The whole photograph goes up at its own size: no crop, no
-   shrink. The server decides whether gpt-image can add resolution (~$0.12),
+   shrink. The server decides whether gpt-image can add resolution (~$0.05),
    then rebuilds the result on the photo's OWN pixels — faces, shapes and
    colour from the original, only finer detail from the model, and only where
    the model agrees with the photograph — and enlarges it to ~3072px. See
@@ -12696,7 +12775,7 @@ async function runHdUpscale() {
     form.append("pixId", pixIdAtPress);
     form.append("pageId", owner?.id || "");
     // For the AI Usage audit only; the model is never shown the headline.
-    form.append("headline", encodeURIComponent((state.headline || "").slice(0, 200)));
+    form.append("headline", encodeURIComponent(pressHeadline(owner)));
     form.append("image", upload.blob, upload.name);
     sent = true;
     const resp = await fetch("/api/hd-upscale", { method: "POST", body: form });

@@ -238,5 +238,37 @@ console.log("\nThe reframe prompt stays short and says the load-bearing things")
      /letterforms/i.test(g) && !/faces, expressions/i.test(g));
 }
 
+/* ── The model, its parameters and its price ─────────────────────────────
+
+   gpt-image-2 rejects `input_fidelity`, so sending it unconditionally 400s
+   every press. And each call is priced at the rates of the model that served
+   it — gpt-image-2's output is $30 a million, not 1.5's $32.              */
+
+const IMAGE_RATES = new Function(
+  "return " + server.match(/^const IMAGE_RATES = (\{[\s\S]*?\n\});/m)[1],
+)();
+const model = new Function("IMAGE_RATES", `
+  ${fnSrc("imageRatesFor")}
+  ${fnSrc("acceptsInputFidelity")}
+  return { imageRatesFor, acceptsInputFidelity };
+`)(IMAGE_RATES);
+
+console.log("\nThe route runs on gpt-image-2 at medium");
+{
+  const primary = (server.match(/^const IMAGE_MODEL_PRIMARY = process\.env\.IMAGE_MODEL \|\| "([^"]+)";/m) || [])[1];
+  ck("gpt-image-2 is the default model", primary === "gpt-image-2", String(primary));
+  ck("gpt-image-2 is not sent input_fidelity", model.acceptsInputFidelity("gpt-image-2") === false);
+  ck("gpt-image-1.5 still is", model.acceptsInputFidelity("gpt-image-1.5") === true);
+  ck("the edit sends input_fidelity only when the model takes it",
+     server.includes('if (acceptsInputFidelity(model)) form.append("input_fidelity", "high")'));
+  ck("quality is fixed at medium in code", /^const IMAGE_QUALITY = "medium";/m.test(server));
+  ck("and no environment variable can change it", !server.includes("process.env.IMAGE_QUALITY"));
+  ck("gpt-image-2 output is priced at $30 a million",
+     model.imageRatesFor("gpt-image-2").imageOut === 30, JSON.stringify(model.imageRatesFor("gpt-image-2")));
+  ck("a gpt-image-1.5 snapshot is priced at 1.5's $32",
+     model.imageRatesFor("gpt-image-1.5-2025-12-16").imageOut === 32,
+     JSON.stringify(model.imageRatesFor("gpt-image-1.5-2025-12-16")));
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

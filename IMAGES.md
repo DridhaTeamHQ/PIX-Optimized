@@ -110,10 +110,10 @@ told what it must not change.
 
 | Parameter | Value | Why |
 |---|---|---|
-| `model` | `gpt-image-1.5`, falling back to `gpt-image-1` on 400/403/404 | The fallback is for accounts without the newer model |
+| `model` | `gpt-image-2`, no fallback | One model; a refusal is reported, not retried on another. `IMAGE_MODEL` overrides the id |
 | `size` | `1536x1024` landscape · `1024x1536` portrait · `auto` if orientation unknown | **Follows the SOURCE, not the poster** |
-| `quality` | `IMAGE_QUALITY`, default `medium` | This is the clay-face setting. `low` starves the model of rendering compute and skin comes back waxy — no prompt can undo it. A boot warning fires if it is set to `low` |
-| `input_fidelity` | `high` | OpenAI's identity-preservation control |
+| `quality` | `medium`, fixed in code (`IMAGE_QUALITY` in `server.mjs`) | No environment variable changes it. `low` starves the model of rendering compute and skin comes back waxy; `high` is ~3× the price for detail the poster gradient covers |
+| `input_fidelity` | not sent to `gpt-image-2` | gpt-image-2 rejects the parameter and always reads the input at high fidelity. Sent as `high` only to a gpt-image-1 family model (`acceptsInputFidelity`) |
 | `image` | the PNG | |
 
 > **`size` follows the source deliberately.** It used to ask for the *poster's*
@@ -124,10 +124,11 @@ told what it must not change.
 
 ### 2.4 The 1536px ceiling, and which path it actually hurts
 
-gpt-image-1.5 caps its output at **1536px on the long edge**, and the browser
-caps the upload to match. This is an API limit, not a setting, so the model
-cannot be asked to upscale: a 3000×2000 press photo goes up as 1536×1024 and
-comes back 1536×1024 — restored, and no larger than it was sent.
+The route asks for **1536px on the long edge** at most, and the browser caps
+the upload to match. That is the route's choice, not the model's: gpt-image-1.5
+could not go larger, and gpt-image-2 can, but the route still asks for the same
+three shapes (`ENHANCE_SIZES`). So a 3000×2000 press photo goes up as 1536×1024
+and comes back 1536×1024 — restored, and no larger than it was sent.
 
 **The two jobs meet that ceiling very differently, and only one of them is hurt
 by it.**
@@ -150,16 +151,17 @@ enlargement worth having is a better kernel than the renderer's — lanczos with
 contrast-adaptive sharpen — and that means a real image pipeline, which this
 route deliberately no longer carries (§2.8).
 
-> **If restore must exceed 1536**, the honest route is a model that outputs
-> larger natively rather than a resampler bolted behind this one. `gpt-image-2`
-> goes to 3840. It was assessed and declined on cost — see §2.11.
+> **If restore must exceed 1536**, the honest route is to ask the model for a
+> larger size rather than bolt a resampler behind it. `gpt-image-2` goes to
+> 3840, but output tokens grow with the pixels, so a larger size is a price
+> decision — see §2.6 and §2.11.
 
 ### 2.5 Response
 
 ```json
 {
   "image":   "/api/enhance-result/9f2c…-a41b",
-  "engine":  "gpt-image-1.5",
+  "engine":  "gpt-image-2",
   "quality": "medium",
   "size":    "1536x1024",
   "mode":    "restore",
@@ -228,31 +230,42 @@ payload  "cost": { "textInTokens": 214, "imageInTokens": 1568, "outputTokens": 1
 UI       ✓ Restored and upscaled via gpt-image-1.5 — $0.046
 ```
 
+(The lines above are a gpt-image-1.5 press from before the switch; the format
+is the same on gpt-image-2.)
+
 Read that, not the estimates below. A table in a document cannot know what
 OpenAI charged today, and this one has been wrong before: it previously quoted
 1024x1024 prices for a route that never asks for a square, understating `low`
-and `medium` by about half. Rates are overridable via `OPENAI_RATE_TEXT_IN`,
-`OPENAI_RATE_IMAGE_IN` and `OPENAI_RATE_IMAGE_OUT` (per million tokens), and
-default to OpenAI's published gpt-image-1.5 rates: **$5 text in, $8 image in,
-$32 image out** (checked 2026-10-13). Until then they defaulted to $10 and $40,
+and `medium` by about half. Each call is priced at the rates of the model that
+served it (`IMAGE_RATES` in `server.mjs`), per million tokens:
+
+| Model | Text in | Image in | Image out |
+|---|---|---|---|
+| **`gpt-image-2`** | $5 | $8 | **$30** |
+| `gpt-image-1.5` | $5 | $8 | $32 |
+
+`OPENAI_RATE_TEXT_IN`, `OPENAI_RATE_IMAGE_IN` and `OPENAI_RATE_IMAGE_OUT`
+still override them. Before 2026-10-13 they defaulted to $10 and $40,
 gpt-image-1's rates, so every cost recorded before that date — in the log, the
 status line and the AI Usage page — reads about 20% higher than OpenAI billed.
 The authoritative total is always the OpenAI usage dashboard.
 
-Rough expectations, output tokens only, at the portrait/landscape shapes this
-route asks for:
+Per reframe, input and output together:
 
-| `IMAGE_QUALITY` | Output cost |
-|---|---|
-| `low` | ~$0.013 (produces clay faces — not recommended) |
-| **`medium`** (default) | **~$0.05** |
-| `high` | ~$0.20 (4× medium, for detail the poster gradient covers) |
+| Quality | `gpt-image-2` | `gpt-image-1.5` |
+|---|---|---|
+| `low` | ~$0.016 | ~$0.078 |
+| **`medium`** (fixed in code) | **$0.052 measured** | **$0.115 measured** (average of 1,109 presses) |
+| `high` | ~$0.176 | ~$0.265 |
 
-**Add the input side to all three.** `input_fidelity=high` is hard-coded and
-has no environment override, and it bills image INPUT tokens on top of the
-figures above — a floor under every call that `IMAGE_QUALITY` cannot lower.
-At `low` it is the dominant line item, which is why switching to `low` saves
-far less than the table implies.
+The measured gpt-image-2 press was a 1536x864 reframe: 1,296 image-in + 167
+text + 1,372 output tokens = $0.052.
+
+**Most of gpt-image-1.5's bill was the upload.** At `input_fidelity=high` the
+uploaded photo cost ~7,900 image tokens (~$0.065) on every call, a floor no
+quality setting could lower — which is why `low` on 1.5 was still ~$0.078.
+gpt-image-2 reads the same photo for ~1,300 tokens (~$0.010), so on it the
+output is most of the cost.
 
 Typically 20–90 seconds, and now bounded: `OPENAI_IMAGE_TIMEOUT_MS` (default
 180s) and `OPENAI_TEXT_TIMEOUT_MS` (default 60s). Before those, a hung request
@@ -275,7 +288,7 @@ near-zero bill into a real one, and `medium` is the correction.
 
 ### 2.7 Reframe — the whole picture redrawn, the way ChatGPT does it
 
-A reviewer typed *"upscale and reframe it to 9:16 ratio"* at ChatGPT and got a seamless, coherent 9:16 picture. Same model. Reframe is that request: the raw picture (capped at 1536px) goes up with no frame and no mask, a short prompt (`buildReframePrompt`) that opens with what the reviewer typed, and **high** render quality (`IMAGE_QUALITY_REFRAME`, default `high`, ~$0.33 measured — input fidelity bills the upload too). The returned 1024×1536 is the result, used as it comes back.
+A reviewer typed *"upscale and reframe it to 9:16 ratio"* at ChatGPT and got a seamless, coherent 9:16 picture. Same model. Reframe is that request: the raw picture (capped at 1536px) goes up with no frame and no mask, a short prompt (`buildReframePrompt`) that opens with what the reviewer typed, and **medium** render quality (fixed in code, ~$0.05 a press on gpt-image-2; it was `high` at ~$0.33 on gpt-image-1.5 until `IMAGE_QUALITY_REFRAME` was dropped). The returned 1024×1536 is the result, used as it comes back.
 
 **It is a regeneration.** Faces and fine detail come back recognisably the same, not pixel-identical, and the selector says so. Two commits tried to get the same picture without regenerating it — the photograph pinned by a mask, the margin drawn around it, the original pasted back at native resolution — and came back with a rectangle, then a smear, then a tone-matched edge that still could not match what the model does when it is simply asked. That machinery survives as **Expand** (§2.8–2.10), for a photograph that must not be redrawn.
 
@@ -400,27 +413,29 @@ synchronous encode froze the editor at the end of the call. It produces a
 enhance from an address, and a `blob:` URL would be recorded as the picture's
 permanent address and die with the tab.
 
-### 2.11 The model ladder
+### 2.11 The model
 
-The route runs on `gpt-image-1.5`, falling back to `gpt-image-1` for an
-account that does not have it. One model family, one parameter set, one kind of
-picture.
+The route runs on `gpt-image-2`, and only on it. There is no fallback: a second
+rung meant a press could be served by a different model and reported as this
+one.
 
-Both rungs are on OpenAI's deprecations page with a shutdown date of
-**1 Dec 2026**. Nothing acts on that today, but when it arrives the route
-returns 502 on every press until a newer model is put in. So the ids are read
-from the environment — `IMAGE_MODEL` and `IMAGE_MODEL_FALLBACK` — which costs
-two lines and makes that day a variable edit on the host rather than an
-emergency deploy. The boot log states what they resolved to, and the `engine`
-field of every response says which rung actually served.
+**Why gpt-image-2.** gpt-image-1 was shut down on **23 Oct 2026** and
+gpt-image-1.5 shuts down on **1 Dec 2026**, so the old ladder was a dead end.
+gpt-image-2 is also less than half the price at the same quality: $0.052 a
+reframe at `medium`, against $0.115 on gpt-image-1.5 (§2.6).
 
-**A newer model may not be a drop-in.** Adopting one is not necessarily an id
-swap: `size` is resolved in the plan stage before anything knows which rung
-will serve, and `input_fidelity` is sent unconditionally. A model that rejects
-either would 400 on every press, fall through to the rung below, and keep
-working — the migration looking finished without having started. If that day
-comes, derive the parameters from `model` inside `callEdit()` and check the
-`engine` field before trusting it.
+**It is not a drop-in, and the code says so.** gpt-image-2 rejects
+`input_fidelity` (it always reads the input at high fidelity), so
+`callEdit()` sends it only when `acceptsInputFidelity(model)` is true — the
+gpt-image-1 family. Cost follows the model the same way: `imageRatesFor(model)`
+prices each call at the rates of the model that served it. Both are covered by
+`test/enhance-params.mjs`. The three sizes the route asks for are unchanged;
+gpt-image-2 accepts them.
+
+The id is still read from the environment — `IMAGE_MODEL` — so the next
+migration is a variable edit on the host rather than an emergency deploy. Leave
+it unset in production. The boot log states what it resolved to, and the
+`engine` field of every response says what actually served.
 
 **Also removed:** the self-hosted Real-ESRGAN/SwinIR service (`upscaler/`), a
 local lanczos resampler, and the per-image colour tint. One button returning
@@ -436,8 +451,8 @@ longer diverts to anything, because there is nothing left to divert to.
 button (2026-10-13). The plan/edit route in §2.1–2.11 still serves Reframe, and its Job selector
 is hidden. Image work: `lib/hd-upscale.js`. Tests: `test/hd-upscale.mjs`.
 
-**It never uses the model's picture as the result.** gpt-image-1.5 cannot copy a photograph:
-`images/edits` draws every pixel again, and `input_fidelity: high` narrows the drift without
+**It never uses the model's picture as the result.** gpt-image cannot copy a photograph:
+`images/edits` draws every pixel again, and high input fidelity narrows the drift without
 closing it. Until 2026-10-14 HD Upscale returned that redraw, enlarged, and reviewers reported
 faces that changed and quality that dropped. Measured on four real news photos, the raw restore
 shrunk back to the source's size sat **23–26 dB** from the original: different jaws and smiles,
@@ -863,9 +878,8 @@ Current cost: ~5ms median per render, 0 dropped frames while typing.
 | Variable | Default | Effect |
 |---|---|---|
 | `OPENAI_API_KEY` | — | Required for Restore & Upscale. Without it the route returns 503 |
-| `IMAGE_QUALITY` | **`medium`** | `low` \| `medium` \| `high`. The code default is `medium` (`server.mjs:175`, `:5176`) — this table said `high` for a while, which is wrong and four times the price. `low` is the clay-face setting and fires a boot warning; `medium` is the intended floor. See §2.6 |
-| `IMAGE_MODEL` | `gpt-image-1.5` | Which model the route calls. **Shuts down 1 Dec 2026** — see §2.9 |
-| `IMAGE_MODEL_FALLBACK` | `gpt-image-1` | Tried on 400/403/404, for an account without the above. Same shutdown date |
+| `IMAGE_QUALITY` | — | **No longer read.** Quality is fixed at `medium` in code (`IMAGE_QUALITY` in `server.mjs`), ~$0.05 a reframe. Delete it from the host if set. See §2.6 |
+| `IMAGE_MODEL` | `gpt-image-2` | Which model the route calls. Leave unset; set only to migrate. See §2.11 |
 | `DISABLE_GPT_IMAGE` | unset | `true` switches the route off and returns 503 |
 | `PEXELS_API_KEY` | — | Stock images; source skipped silently when unset |
 | `FAL_KEY` | — | Flux generation |
