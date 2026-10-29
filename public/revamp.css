@@ -2945,6 +2945,23 @@ body:is([data-role="qa"], [data-role="admin"], [data-role="creator"]) .preview-p
   color: var(--text-secondary);
 }
 
+/* What kind of post a press was on, when the headline alone does not say:
+   a set of story pages, or a Daily Wrap (in the badge's own orange). */
+.imageai-kind {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--surface-input);
+  color: var(--text-secondary);
+}
+
+.imageai-kind.is-wrap {
+  background: rgba(235, 99, 41, 0.14);
+  color: #eb6329;
+}
+
 .imageai-outcome {
   font-size: 0.76rem;
   font-weight: 700;
@@ -3867,7 +3884,10 @@ a.imageai-shot:hover img {
   scrollbar-width: none;
 }
 
-.analytics-page-tab {
+/* AI Usage's People / Posts / Every press tabs look the same, under their
+   own class so Analytics' tab handler does not pick them up. */
+.analytics-page-tab,
+.imageai-tab {
   flex: 1 0 auto;
   min-height: 38px;
   padding: 0 18px;
@@ -3881,12 +3901,50 @@ a.imageai-shot:hover img {
   cursor: pointer;
 }
 
-.analytics-page-tab:hover {
+.analytics-page-tab:hover,
+.imageai-tab:hover {
   color: var(--text-primary);
   background: var(--surface-input);
 }
 
-.analytics-page-tab.is-active {
+.analytics-page-tab.is-active,
+.imageai-tab.is-active {
   background: var(--accent);
   color: #fff;
+}
+
+.imageai-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.imageai-tab-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-input);
+  color: var(--text-secondary);
+}
+
+.imageai-tab.is-active .imageai-tab-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* The dark theme's accent is a pale blue, and white on it is unreadable —
+   text on it goes dark, as the sidebar's active item already does. */
+:root[data-theme="dark"] .analytics-page-tab.is-active,
+:root[data-theme="dark"] .imageai-tab.is-active,
+:root[data-theme="dark"] .analytics-filter-apply {
+  color: #2a2828;
+}
+
+:root[data-theme="dark"] .imageai-tab.is-active .imageai-tab-count {
+  background: rgba(0, 0, 0, 0.12);
+  color: #2a2828;
 }

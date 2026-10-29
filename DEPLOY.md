@@ -38,7 +38,7 @@ Set on the **app** service:
 | `SUPABASE_DIRECT_CONNECTION_URL` | fallback | Direct connection URI. Only used when the pooler URL is unset — `db.<ref>.supabase.co` is IPv6-only, so it fails unless the host has IPv6 or the IPv4 add-on |
 | `PEXELS_API_KEY` | optional | stock images. Unset = that source is skipped |
 | `FAL_KEY` | optional | Flux image generation (last-resort, paid) |
-| `IMAGE_QUALITY` | optional | `medium` (default). low ≈ $0.013, medium ≈ $0.05, high ≈ $0.20 per image. The main cost lever — `high` is 4× medium |
+| `IMAGE_MODEL` | leave unset | Defaults to `gpt-image-2`. Set only to migrate to another model. Quality is fixed at `medium` in code (`IMAGE_QUALITY` is no longer read), ~$0.05 a reframe |
 | `ENHANCE_RATE_MAX` | optional | Unset/`0` = no cap. Billed AI Enhances allowed per user per hour before a 429 |
 | `DISABLE_GPT_IMAGE` | optional | `1` switches AI Enhance off entirely (route returns 503) |
 | `MAX_CLIP_SECONDS` | optional | `90` |

@@ -4,7 +4,7 @@ import {
   readFileSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { delimiter, extname, join, normalize } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, networkInterfaces } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { TwitterApi } from "twitter-api-v2";
@@ -220,51 +220,52 @@ if (twitterClient) {
 // a silent fallback.
 const gptImageDisabled = /^(1|true|yes)$/i.test(env("DISABLE_GPT_IMAGE"));
 
-/* Read the quality actually in force rather than hardcoding a figure. It is
-   the difference between ~$0.016 and ~$0.25 a click, and a fixed number in a
-   log line goes stale the moment someone edits the variable — which is how
-   you end up reassured by a message that is quietly wrong. */
-function enhanceCostLabel() {
-  // "high" is clamped to medium in runEnhanceEdit, so report what runs.
-  const clamp = (v) => (v === "high" ? "medium" : v);
-  const q = clamp((process.env.IMAGE_QUALITY || "medium").toLowerCase());
-  const rq = clamp((process.env.IMAGE_QUALITY_REFRAME || "medium").toLowerCase());
-  // Measured, not the price-table figure: input_fidelity=high bills the
-  // uploaded photograph (~6.5k image tokens) on top of the output.
-  const rper = { low: "~$0.02", medium: "~$0.12", high: "~$0.33" }[rq] || "cost unknown";
-  if (rq !== q) return `restore quality=${q}, reframe quality=${rq} (${rper} each)`;
-  // gpt-image-1.5 list price at the portrait/landscape shapes this route asks
-  // for (1024x1536 / 1536x1024). Square is cheaper; these are the figures that
-  // matter because sizeForRatio() follows the source and rarely returns square.
-  const per = { low: "~$0.013", medium: "~$0.05", high: "~$0.20" }[q] || "cost unknown";
-  return `quality=${q}, ${per} each`;
+/* Quality is fixed in code, for every job. It used to be read from
+   IMAGE_QUALITY / IMAGE_QUALITY_REFRAME, and a variable left on a deployment
+   is how a reframe ended up costing ~$0.33. Nothing reads those any more. */
+const IMAGE_QUALITY = "medium";
+
+/* Per million tokens, Standard tier. Each call is priced at the rates of the
+   model that served it — gpt-image-2's output is $30, not 1.5's $32. */
+const IMAGE_RATES = {
+  "gpt-image-1.5": { textIn: 5, imageIn: 8, imageOut: 32 },
+  "gpt-image-2":   { textIn: 5, imageIn: 8, imageOut: 30 },
+};
+function imageRatesFor(model) {
+  const key = Object.keys(IMAGE_RATES).find((k) => model === k || model.startsWith(k + "-"));
+  return IMAGE_RATES[key] || IMAGE_RATES["gpt-image-2"];
 }
-/* ── The model ladder ──────────────────────────────────────────────────────
 
-   The route runs on gpt-image-1.5, falling back to gpt-image-1 for an account
-   that does not have it. That is the whole ladder, deliberately: one model
-   family, one parameter set, one kind of picture.
+/* gpt-image-2 rejects `input_fidelity` — it always reads the input at high
+   fidelity. Only the gpt-image-1 family takes the parameter. */
+function acceptsInputFidelity(model) { return /^gpt-image-1/.test(model); }
 
-   It is worth writing down that both rungs are on OpenAI's deprecations page
-   with a shutdown date of 1 Dec 2026. Nothing here needs to act on that today
-   and nothing here does — but the date is real, and when it arrives this route
-   returns 502 on every press until a newer model is put in.
+/* Measured per reframe at medium, so the boot log says what a press costs. */
+function enhanceCostLabel() {
+  const per = IMAGE_MODEL_PRIMARY.startsWith("gpt-image-1.5") ? "~$0.115" : "~$0.05";
+  return `quality=${IMAGE_QUALITY}, ${per} a reframe`;
+}
+/* ── The model ─────────────────────────────────────────────────────────────
 
-   Which is why the ids are read from the environment rather than written into
-   the call. It costs two lines and it is the difference between that day being
-   a variable edit on the host and an emergency deploy. Set IMAGE_MODEL to
-   change what runs; the boot log states what it resolved to, and the `engine`
-   field of every response says which rung actually served. */
-/* One model, and only this one.
+   The route runs on gpt-image-2, and only on it. There is no fallback: a
+   second rung meant a press could be served by a different model and
+   reported as this one.
 
-   gpt-image-1.5 — default snapshot gpt-image-1.5-2025-12-16. OpenAI's model
-   page lists v1/images/edits as supported and exactly three output sizes,
-   1024x1024 / 1024x1536 / 1536x1024, so 1536 on the long edge is the MODEL's
-   ceiling and not a choice made here.
+   Why gpt-image-2. gpt-image-1 was shut down on 23 Oct 2026 and gpt-image-1.5
+   shuts down on 1 Dec 2026, so 1.5 was a dead end either way. It is also less
+   than half the price: a 1536x864 reframe on gpt-image-2 at medium measured
+   1,296 image-in + 167 text + 1,372 out tokens = $0.052, against $0.115
+   averaged over 1,109 presses on gpt-image-1.5. Most of 1.5's bill was the
+   upload — ~7,900 image tokens (~$0.065) at input_fidelity=high, against
+   ~1,300 on gpt-image-2.
 
-   No second rung. A fallback meant a press could be served by a different
-   model and reported as this one. */
-const IMAGE_MODEL_PRIMARY = process.env.IMAGE_MODEL || "gpt-image-1.5";
+   The id is still read from the environment, so the next migration is a
+   variable edit on the host rather than an emergency deploy. Set IMAGE_MODEL
+   to change what runs; the boot log states what it resolved to, and the
+   `engine` field of every response says what actually served. Parameters
+   and rates follow the model (acceptsInputFidelity, imageRatesFor), so
+   swapping the id does not send one model's parameters to another. */
+const IMAGE_MODEL_PRIMARY = process.env.IMAGE_MODEL || "gpt-image-2";
 
 if (gptImageDisabled) {
   console.log("Restore & Upscale is switched off (DISABLE_GPT_IMAGE).");
@@ -395,7 +396,7 @@ const PUBLIC_API_ROUTES = new Set([
    by habit, by a stale tab, or by curl — is refused. */
 const REVIEWER_ONLY_API_ROUTES = new Set([
   "/api/upscale-image",
-  // HD Upscale pays for a gpt-image-1.5 restore on smaller photos.
+  // HD Upscale pays for a gpt-image-2 restore on smaller photos.
   "/api/hd-upscale",
 ]);
 
@@ -712,8 +713,19 @@ const server = http.createServer(async (req, res) => {
   createReadStream(filePath).pipe(res);
 });
 
+function networkAddresses() {
+  return Object.values(networkInterfaces())
+    .flat()
+    .filter((a) => a && a.family === "IPv4" && !a.internal && !a.address.startsWith("169.254."))
+    .map((a) => a.address);
+}
+
 server.listen(port, () => {
-  console.log(`PIXIE running at http://localhost:${port}`);
+  console.log("PIXIE running at:");
+  console.log(`  Local:   http://localhost:${port}`);
+  const lan = networkAddresses();
+  if (!lan.length) console.log("  Network: none (not connected to a network)");
+  for (const ip of lan) console.log(`  Network: http://${ip}:${port}`);
 });
 
 // Railway sends SIGTERM on redeploy. Without this the process is killed
@@ -5659,8 +5671,10 @@ async function planEnhance(buffer, mime, { posterRatio = "", sourceW = 0, source
    stops negotiating about placement and only describes what fills the margin.
    See buildExpandPrompt(). */
 
-// gpt-image-1/1.5's output shapes. A size arriving from a browser is checked
-// against this rather than trusted — it is what OpenAI gets billed for.
+// The three output shapes this route asks for. gpt-image-2 accepts them (it
+// takes others too, but 1536 on the long edge is this route's choice). A size
+// arriving from a browser is checked against this rather than trusted — it is
+// what OpenAI gets billed for.
 const ENHANCE_SIZES = new Set(["1024x1024", "1024x1536", "1536x1024", "auto"]);
 
 /* ── Result cache ──────────────────────────────────────────────────────────
@@ -5672,8 +5686,8 @@ const ENHANCE_SIZES = new Set(["1024x1024", "1024x1536", "1536x1024", "auto"]);
    twice for the same question.
 
    Keyed on the input bytes AND every parameter that changes the answer or the
-   price — quality included, so lowering IMAGE_QUALITY does not keep serving
-   the expensive result that was cached under the old tier.
+   price — quality included, so a change to IMAGE_QUALITY does not keep
+   serving a result that was cached under the old tier.
 
    In-process and deliberately so: a restart costing one repeat call is a fair
    trade against a cache that can serve a stale image across a deploy. The
@@ -6050,38 +6064,16 @@ async function runEnhanceEdit({
      reads as modelling clay. No prompt can undo it: you cannot instruct a
      model to render texture it has no budget to render.
 
-     The default is `medium`, not `high`. High is four times the price at the
-     shapes this route asks for (~$0.20 against ~$0.05) and the poster draws
-     the photograph behind a dark gradient with copy over it, so the extra
-     rendering budget is spent on detail the reader never sees. It went to
-     `high` in dbcdb0f on the same day the free self-hosted upscaler was
-     deleted, and the two together are what turned a near-zero bill into a
-     real one.
+     The setting is `medium`, not `high`, for every job including reframe.
+     On gpt-image-2 high is about three times the price (~$0.176 against
+     $0.052 a reframe) and the poster draws the photograph behind a dark
+     gradient with copy over it, so the extra rendering budget is spent on
+     detail the reader never sees.
 
-     IMAGE_QUALITY still overrides per deployment, in both directions, and the
-     boot log states the tier actually in force. */
-  /* Reframe defaults to MEDIUM (~$0.12 vs ~$0.33 at high) to keep the OpenAI
-     bill down; set IMAGE_QUALITY_REFRAME=high to get the old behaviour back.
-     Original note: reframe was HIGH by default, separately from the rest. It is the
-     job whose output IS the picture — every pixel on the poster is the
-     model's — and at medium the leaves, water and skin that make a redrawn
-     scene believable come back soft. High is what ChatGPT spends on the same
-     request, and the comparison that prompted this was made against it.
-     ~$0.20 against ~$0.05; the status line says what each press cost.
-     IMAGE_QUALITY_REFRAME overrides it on its own. */
-  let quality = (mode === "reframe"
-    ? (process.env.IMAGE_QUALITY_REFRAME || "medium")
-    : (process.env.IMAGE_QUALITY || "medium")).toLowerCase();
-  /* "high" is switched off in code, for every job: it cost ~$0.33 a press
-     against ~$0.12 at medium, and a variable left at "high" on any
-     deployment must not bring that back. Medium is the ceiling. */
-  if (quality === "high") {
-    console.warn("⚠ IMAGE_QUALITY(_REFRAME)=high is disabled in code — using medium.");
-    quality = "medium";
-  }
-  if (quality === "low") {
-    console.warn("⚠ IMAGE_QUALITY=low — faces come back smooth and clay-like. medium is the intended floor.");
-  }
+     Fixed in code (IMAGE_QUALITY, top of file). It used to be read from
+     IMAGE_QUALITY / IMAGE_QUALITY_REFRAME, and a variable left at "high" on a
+     deployment is what made a reframe cost ~$0.33. */
+  const quality = IMAGE_QUALITY;
 
   /* An expand whose frame was not built by the caller cannot be done here.
      There is no image library on this server to build it with, and asking for
@@ -6127,16 +6119,9 @@ async function runEnhanceEdit({
 
   const t0 = Date.now();
 
-  /* One parameter set, because both rungs of the ladder take the same one.
-
-     Worth knowing before the ladder ever changes: this is only true of the
-     gpt-image-1 family. A later model may not accept `input_fidelity` at all,
-     and `size` is resolved back in handleEnhancePlan before anything knows
-     which rung will serve — so a model whose parameters differ cannot be
-     adopted by swapping the id. It would 400 on every press, fall through to
-     the rung below, and keep working, which is the migration looking finished
-     without having started. Derive the parameters from `model` at that point,
-     rather than sending one set to a model that wants another. */
+  /* The parameters follow `model`. gpt-image-2 rejects `input_fidelity` (it
+     always reads the input at high fidelity), so sending the gpt-image-1
+     family's set to it would 400 on every press. */
   const callEdit = async (model, withMask) => {
     const form = new FormData();
     form.append("model", model);
@@ -6144,8 +6129,9 @@ async function runEnhanceEdit({
     form.append("size", size);
     form.append("quality", quality);
     // OpenAI's identity-preservation control, and the thing standing between a
-    // restore and a handsome stranger in the right shirt.
-    form.append("input_fidelity", "high");
+    // restore and a handsome stranger in the right shirt. Built into
+    // gpt-image-2; only the gpt-image-1 family takes it as a parameter.
+    if (acceptsInputFidelity(model)) form.append("input_fidelity", "high");
     /* NEVER "auto", which is the default.
 
        Handed an input that carries an alpha channel, gpt-image is entitled to
@@ -6176,30 +6162,21 @@ async function runEnhanceEdit({
   let usedMask = Boolean(mask) && job === "expand";   // never on reframe: the whole frame is redrawn
   let aiRes = await callEdit(modelUsed, usedMask);
 
-  /* Two different retries, and they must not be confused with each other.
-
-     A 400/403/404 on the FIRST call usually means the account has no
-     gpt-image-1.5, so the same request is repeated on gpt-image-1. If that
-     also refuses and a mask was attached, the mask is the next most likely
-     thing the account or model will not take, so it is dropped and the call
-     is repeated once more. Dropping it is survivable precisely because the
-     frame is already composited: the geometry stays correct, only the
+  /* A refusal is reported, not retried on another model — there is none.
+     The one retry left is the mask: if a masked expand is refused with a
+     422, the mask is the most likely thing the model will not take, so it is
+     dropped and the call is repeated once. Dropping it is survivable precisely because
+     the frame is already composited: the geometry stays correct, only the
      guarantee that the source pixels are untouched is lost — and the caller
      pastes them back over the result anyway. */
   if (!aiRes.ok && [400, 403, 404].includes(aiRes.status)) {
     const firstErr = await aiRes.text().catch(() => "");
 
     /* A 400 is not only "no such model". It is also how the API reports a
-       moderation refusal and a malformed parameter, and neither of those gets
-       better on a second model — the same picture and the same form go up
-       again, fail the same way, and the reviewer waits through two full
-       image-generation round trips before seeing an error. At three minutes
-       apiece that is six minutes to be told no.
-
-       So the retry is narrowed to what it was actually written for: the
-       account not having the newer model. 403 and 404 always mean that; a
-       400 only does when the body says so. Anything else fails on the first
-       attempt, which is both faster and more honest. */
+       moderation refusal and a malformed parameter. There is no second model
+       to try, so every one of them fails on the first attempt, which is both
+       faster and more honest than a reviewer waiting through another
+       three-minute round trip to be told no. */
     {
       console.warn(`⚠ ${IMAGE_MODEL_PRIMARY} refused the request (${aiRes.status}):`, firstErr.slice(0, 300));
 
@@ -6270,16 +6247,16 @@ async function runEnhanceEdit({
 
      Rates are per MILLION tokens and overridable, because they are the one
      part of this that OpenAI can change without the code noticing. The
-     defaults are OpenAI's published gpt-image-1.5 rates (Standard tier,
-     checked 2026-10-13): $5 text in, $8 image in, $32 image out. They were
-     $10 and $40 until then — gpt-image-1's rates — which overstated every
-     press by about 20%. The authoritative number is always the usage
-     dashboard; this is the per-click figure that makes the dashboard total
-     explicable. */
+     defaults are the published rates of the model that served the call
+     (IMAGE_RATES): gpt-image-2 is $5 text in, $8 image in, $30 image out;
+     gpt-image-1.5 is the same with $32 out. The authoritative number is
+     always the usage dashboard; this is the per-click figure that makes the
+     dashboard total explicable. */
   const usage = data?.usage || null;
-  const RATE_TEXT_IN = Number(env("OPENAI_RATE_TEXT_IN") || 5);
-  const RATE_IMAGE_IN = Number(env("OPENAI_RATE_IMAGE_IN") || 8);
-  const RATE_IMAGE_OUT = Number(env("OPENAI_RATE_IMAGE_OUT") || 32);
+  const rates = imageRatesFor(modelUsed);
+  const RATE_TEXT_IN = Number(env("OPENAI_RATE_TEXT_IN") || rates.textIn);
+  const RATE_IMAGE_IN = Number(env("OPENAI_RATE_IMAGE_IN") || rates.imageIn);
+  const RATE_IMAGE_OUT = Number(env("OPENAI_RATE_IMAGE_OUT") || rates.imageOut);
   let cost = null;
   if (usage) {
     const textIn = usage.input_tokens_details?.text_tokens ?? 0;
@@ -6334,9 +6311,7 @@ async function runEnhanceEdit({
     // Measured, not estimated. Null when OpenAI returns no usage block.
     cost,
     /* `quality` and `size` come back with the image so the setting can be
-       checked from outside the box. IMAGE_QUALITY is an environment variable
-       and an override in Railway silently reinstates the clay — without this
-       the only way to know was to read a log line on the host. */
+       checked from outside the box, without reading a log line on the host. */
     quality,
     size,
     // Which job actually ran. The two return pictures that differ in framing,
@@ -6438,7 +6413,7 @@ async function handleEnhancePlan(req, res) {
      several seconds faster, and nothing in the prompt describing weather that
      is not in the frame. Auto still runs it — it cannot choose a job without
      it — and so do reframe and expand, which need the continuation prose. */
-  /* No planner. gpt-image-1.5 is the only model this route calls.
+  /* No planner. gpt-image-2 is the only model this route calls.
 
      Stage 1 was a gpt-4o-mini vision call that chose between the jobs. The
      reviewer chooses on the Job selector, so it answered a question nobody
@@ -6756,7 +6731,7 @@ async function handleEnhanceSingleShot(req, res) {
   const sourceW = srcDims ? Number(srcDims[1]) : 0;
   const sourceH = srcDims ? Number(srcDims[2]) : 0;
 
-  // Same rule: gpt-image-1.5 and nothing else.
+  // Same rule: gpt-image-2 and nothing else.
   const plan = {
     mode: requestedMode === "auto" ? "reframe" : requestedMode,
     amount: "moderate", subject: "people", description: "", reason: "", decidedBy: "caller",

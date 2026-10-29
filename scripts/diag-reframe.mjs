@@ -1,12 +1,13 @@
-// Replays the exact request the CMS's Reframe job sends to gpt-image-1.5,
+// Replays the exact request the CMS's Reframe job sends to gpt-image-2,
 // straight from this machine, so the model's answer can be looked at without
-// a session on the CMS. Costs one image generation (~$0.33 at high).
+// a session on the CMS. Costs one image generation (~$0.05 at medium).
 //
 //   node scripts/diag-reframe.mjs prod photo.jpg
-//   node scripts/diag-reframe.mjs fidelity-low photo.jpg
+//   node scripts/diag-reframe.mjs fidelity-low photo.jpg   (gpt-image-1 family only)
 //
-// The prompt is lifted from server.mjs at run time, so this cannot drift
-// from what production sends. Output lands in the current directory.
+// The prompt, model, quality and rates are lifted from server.mjs at run time,
+// so this cannot drift from what production sends. Output lands in the
+// current directory.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,17 +31,22 @@ function fnSrc(src, name) {
   }
 }
 const buildReframePrompt = new Function(fnSrc(server, "buildReframePrompt") + "\nreturn buildReframePrompt;")();
-const model = (server.match(/IMAGE_MODEL_PRIMARY = process\.env\.IMAGE_MODEL \|\| "([^"]+)"/) || [])[1] || "gpt-image-1.5";
+const model = (server.match(/IMAGE_MODEL_PRIMARY = process\.env\.IMAGE_MODEL \|\| "([^"]+)"/) || [])[1] || "gpt-image-2";
+const quality = (server.match(/^const IMAGE_QUALITY = "([^"]+)";/m) || [])[1];
+if (!quality) throw new Error("missing IMAGE_QUALITY in server.mjs");
+const IMAGE_RATES = new Function("return " + server.match(/^const IMAGE_RATES = (\{[\s\S]*?\n\});/m)[1])();
+const imageRatesFor = new Function("IMAGE_RATES", fnSrc(server, "imageRatesFor") + "\nreturn imageRatesFor;")(IMAGE_RATES);
 
 const variant = process.argv[2] || "prod";          // prod | fidelity-low
 const inputFile = process.argv[3] ? resolve(process.argv[3]) : null;
 if (!inputFile) { console.log("usage: node scripts/diag-reframe.mjs <prod|fidelity-low> <photo.png|jpg>"); process.exit(2); }
 const prompt = buildReframePrompt("", "9:16", "people");
-const quality = "high";
-const fidelity = variant === "fidelity-low" ? "low" : "high";
+// gpt-image-2 rejects input_fidelity; only the gpt-image-1 family takes it.
+const fidelity = /^gpt-image-1/.test(model) ? (variant === "fidelity-low" ? "low" : "high") : null;
+const rates = imageRatesFor(model);
 
 console.log("model       :", model);
-console.log("size        : 1024x1536  quality:", quality, " input_fidelity:", fidelity, " background: opaque");
+console.log("size        : 1024x1536  quality:", quality, " input_fidelity:", fidelity ?? "(not sent)", " background: opaque");
 console.log("prompt      :\n" + prompt.split("\n").map((l) => "  | " + l).join("\n"));
 
 const bytes = readFileSync(inputFile);
@@ -50,7 +56,7 @@ form.append("model", model);
 form.append("prompt", prompt);
 form.append("size", "1024x1536");
 form.append("quality", quality);
-form.append("input_fidelity", fidelity);
+if (fidelity) form.append("input_fidelity", fidelity);
 form.append("background", "opaque");
 form.append("output_format", "png");
 form.append("image", new Blob([bytes], { type: mime }), mime === "image/png" ? "input.png" : "input.jpg");
@@ -72,6 +78,6 @@ const out = HERE + `diag_out_${variant}.png`;
 writeFileSync(out, Buffer.from(b64, "base64"));
 const u = data.usage || {};
 const inTok = u.input_tokens_details?.image_tokens || 0, txt = u.input_tokens_details?.text_tokens || 0, outTok = u.output_tokens || 0;
-const usd = (txt * 5 + inTok * 8 + outTok * 32) / 1e6;   // OPENAI_RATE_* defaults from server.mjs
+const usd = (txt * rates.textIn + inTok * rates.imageIn + outTok * rates.imageOut) / 1e6;   // IMAGE_RATES from server.mjs
 console.log(`done in ${(ms / 1000).toFixed(1)}s → ${out}`);
 console.log(`usage: text ${txt}, image-in ${inTok}, out ${outTok} → ~$${usd.toFixed(3)}`);

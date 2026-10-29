@@ -647,13 +647,13 @@
           <svg class="acc-chevron" width="14" height="14"><use href="#i-chevron"/></svg>
         </button>
         <div class="acc-body"><div class="acc-inner">
-            <!-- HD Upscale: the paid upscale. On smaller photos a gpt-image-1.5
-                 restore (~$0.12) supplies finer detail, which the server lays
+            <!-- HD Upscale: the paid upscale. On smaller photos a gpt-image-2
+                 restore (~$0.05) supplies finer detail, which the server lays
                  onto the original's own pixels so faces are not redrawn; then
                  an enlarge to ~3072px. Larger photos are enlarged for free.
                  See lib/hd-upscale.js. -->
             <button type="button" id="hd-upscale-btn" class="btn-ai btn-hd-upscale" disabled
-                    title="Enlarges the photo to ~3000px. On smaller photos OpenAI adds sharper detail (~$0.12); faces and colours stay exactly as in the original.">
+                    title="Enlarges the photo to ~3000px. On smaller photos OpenAI adds sharper detail (~$0.05); faces and colours stay exactly as in the original.">
               <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
               HD Upscale
             </button>
@@ -664,10 +664,10 @@
               Free Upscale
             </button>
             <!-- Reframe is its own button, red because it is a full gpt-image
-                 redraw (~$0.12 at medium). No per-page cap since 2026-10-14;
+                 redraw (~$0.05 at medium). No per-page cap since 2026-10-14;
                  the server's hourly per-user cap and spend guard still apply. -->
             <button type="button" id="ai-reframe-btn" class="btn-ai btn-danger-reframe" disabled
-                    title="Redraws the whole picture at the poster's shape. Paid, about $0.12 a press.">
+                    title="Redraws the whole picture at the poster's shape. Paid, about $0.05 a press.">
               <svg class="ai-spark" width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg>
               <span class="reframe-label">Reframe</span>
             </button>
@@ -689,7 +689,7 @@
             <label class="field" id="enhance-mode-field" style="margin-top:10px;" hidden>
               <span class="field-label">Job</span>
               <select id="enhance-mode">
-                <!-- Reframe is the default: one gpt-image-1.5 call at high
+                <!-- Reframe is the default: one gpt-image-2 call at medium
                      quality redraws the whole scene at the poster's shape —
                      what "upscale and reframe it to 9:16" gets from ChatGPT.
                      It is a regeneration. Expand is the job that pins the
@@ -1665,7 +1665,22 @@
       </div>
     </section>
 
-    <section class="analytics-grid">
+    <!-- The same presses three ways, one page at a time. The cards above
+         stay put and total all three; every page is filled on each load, so
+         switching is instant. -->
+    <nav class="analytics-pages imageai-pages" role="tablist" aria-label="AI usage pages">
+      <button type="button" class="imageai-tab is-active" role="tab" data-imageai-tab="people" aria-selected="true">
+        People <span class="imageai-tab-count" data-imageai-count="people">0</span>
+      </button>
+      <button type="button" class="imageai-tab" role="tab" data-imageai-tab="posts" aria-selected="false">
+        Posts <span class="imageai-tab-count" data-imageai-count="posts">0</span>
+      </button>
+      <button type="button" class="imageai-tab" role="tab" data-imageai-tab="presses" aria-selected="false">
+        Every press <span class="imageai-tab-count" data-imageai-count="presses">0</span>
+      </button>
+    </nav>
+
+    <section class="analytics-grid" data-imageai-page="people">
       <article class="analytics-card analytics-card-wide">
         <div class="analytics-card-head">
           <div>
@@ -1678,20 +1693,20 @@
       </article>
     </section>
 
-    <section class="analytics-grid">
+    <section class="analytics-grid" data-imageai-page="posts" hidden>
       <article class="analytics-card analytics-card-wide">
         <div class="analytics-card-head">
           <div>
             <span class="analytics-card-label">Posts</span>
             <h3>Presses by post</h3>
-            <p class="analytics-roster-desc">"Presses" lists every press on that post below, with the pictures.</p>
+            <p class="analytics-roster-desc">"Presses" opens every press on that post, with the pictures.</p>
           </div>
         </div>
         <div class="imageai-table-wrap" id="imageai-posts"></div>
       </article>
     </section>
 
-    <section class="analytics-grid">
+    <section class="analytics-grid" data-imageai-page="presses" hidden>
       <article class="analytics-card analytics-card-wide">
         <div class="analytics-card-head">
           <div>
