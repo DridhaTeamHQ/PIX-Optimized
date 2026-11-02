@@ -323,7 +323,7 @@ const state = {
   videoCaption: "",         // burned into the clip, bottom-anchored
   videoCaptionSize: 48,     // design px at 920×1700; scaled per ratio — poster headline size
   secondLogoImage: null,
-  tag: "none",       // "none" | "daily-wrap" | "trending" | "breaking" | "swipe-video" (+ "-text" variants)
+  tag: "none",       // "none" | "daily-wrap" | "weekly-wrap" | "trending" | "breaking" | "swipe-video" (+ "-text" variants)
   tagImages: {},     // { trending: Image, breaking: Image } — SVG-backed tags only
   isDownloading: false,
   forceTextExport: false,
@@ -643,6 +643,7 @@ const TAG_CHIP_FONT     = "700 27px 'Poppins', 'Segoe UI', Arial, sans-serif";
 // the badge's left edge up with the headline's visible left edge.
 const DRAWN_TAGS = {
   "daily-wrap":       { label: "DAILY WRAP",      bg: "#EB6329", icon: "clock", chip: true, flush: true },
+  "weekly-wrap":      { label: "WEEKLY WRAP",     bg: "#7C3AED", icon: "clock", chip: true, flush: true },
   "swipe-video":      { label: "Swipe for Video", bg: "#3979FF", icon: "play" },
   "swipe-video-text": { label: "Swipe for Video", bg: "#3979FF", icon: false }
 };
