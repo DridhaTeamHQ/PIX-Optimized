@@ -3950,24 +3950,35 @@ a.imageai-shot:hover img {
 }
 
 /* ═══ Voice summary ═════════════════════════════════════════════════════════
-   Heading and its generate button share a row, so the button reads as acting
-   on this box rather than on the paragraph above. */
+   The heading sits on its own line with the two buttons in an even row
+   beneath it, right above the box they act on. The side panel is narrow, so
+   the buttons share the width rather than sitting beside the heading. */
 .voice-summary-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-2);
   margin-top: var(--space-4);
+  margin-bottom: var(--space-2);
 }
 
 .voice-summary-head .acc-subtitle {
-  margin-top: 0;
+  margin: 0;
+}
+
+.voice-summary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
 
 .voice-summary-btn {
+  min-width: 0;
   font-size: 12px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (pointer: fine) {

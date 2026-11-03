@@ -4773,7 +4773,7 @@ async function handleGenerateSummary(req, res) {
       apiKey: openaiApiKey,
       fetchImpl: (url, options) => fetchWithDeadline(url, options, OPENAI_TEXT_TIMEOUT_MS, "voice summary"),
     });
-    if (result.usage) meterText(result.usage);
+    for (const usage of result.usages || []) meterText(usage);
     if (result.openaiStatus) {
       console.error(`✗ OpenAI ${result.openaiStatus} (voice summary):`, String(result.openaiBody || "").slice(0, 300));
       sendJson(res, 502, { error: openaiErrorMessage(result.openaiStatus, result.openaiBody) });

@@ -157,6 +157,7 @@ const detailEdit = document.getElementById("detail-edit");
 const voiceSummaryEdit = document.getElementById("voice-summary-edit");
 const voiceSummaryBtn = document.getElementById("voice-summary-generate");
 const voiceSummaryStatus = document.getElementById("voice-summary-status");
+const voiceSummaryPlayBtn = document.getElementById("voice-summary-play");
 let voiceSummaryNonce = 0;   // see generateVoiceSummary
 const imgOffsetX = document.getElementById("img-offset-x");
 const imgOffsetY = document.getElementById("img-offset-y");
@@ -2041,6 +2042,7 @@ voiceSummaryEdit?.addEventListener("input", () => {
   setVoiceSummaryStatus(voiceSummaryCountLabel());
 });
 voiceSummaryBtn?.addEventListener("click", () => generateVoiceSummary());
+voiceSummaryPlayBtn?.addEventListener("click", () => toggleVoiceSummaryPlayback());
 
 /* Story copy writes to live state; syncActivePageContent folds it back onto
    the page on the next read, which is the same route every page-scoped field
@@ -11051,6 +11053,7 @@ function setArticleStatus(msg, kind) {
    slide. `voiceSummaryNonce` is bumped by a new post, a reopen and a hand
    edit, so a summary that lands late never overwrites any of them. */
 function setVoiceSummary(text) {
+  stopVoiceSummaryPlayback();
   state.voiceSummary = text || "";
   voiceSummaryNonce++;
   if (voiceSummaryEdit) voiceSummaryEdit.value = state.voiceSummary;
@@ -11067,6 +11070,45 @@ function setVoiceSummaryStatus(msg, kind = "") {
   voiceSummaryStatus.className = "helper-text" + (kind ? ` ${kind}` : "");
   voiceSummaryStatus.textContent = msg ||
     "For the DailyMattr voice agent. Not shown on any slide — written from the scraped article.";
+}
+
+/* A listen-through in the browser's own voice, so the writer hears how the
+   summary flows before DailyMattr's agent speaks it. One utterance for the
+   whole text, so there are no breaks between chunks. */
+function setVoiceSummaryPlayLabel(playing) {
+  if (!voiceSummaryPlayBtn) return;
+  voiceSummaryPlayBtn.textContent = playing ? "■ Stop voice" : "▶ Play voice";
+  voiceSummaryPlayBtn.setAttribute("aria-pressed", String(playing));
+}
+
+function stopVoiceSummaryPlayback() {
+  if (window.speechSynthesis?.speaking || window.speechSynthesis?.pending) window.speechSynthesis.cancel();
+  setVoiceSummaryPlayLabel(false);
+}
+
+function toggleVoiceSummaryPlayback() {
+  const synth = window.speechSynthesis;
+  if (!synth) {
+    setVoiceSummaryStatus("This browser can't play voice.", "error");
+    return;
+  }
+  if (synth.speaking || synth.pending) {
+    stopVoiceSummaryPlayback();
+    return;
+  }
+  const text = (state.voiceSummary || "").trim();
+  if (!text) {
+    setVoiceSummaryStatus("Nothing to play yet — generate or write a summary first.", "error");
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voices = synth.getVoices();
+  utterance.voice = voices.find((v) => v.lang === "en-GB") || voices.find((v) => v.lang?.startsWith("en")) || null;
+  utterance.lang = utterance.voice?.lang || "en-GB";
+  utterance.onend = utterance.onerror = () => setVoiceSummaryPlayLabel(false);
+  synth.cancel();
+  synth.speak(utterance);
+  setVoiceSummaryPlayLabel(true);
 }
 
 /* `auto` is the call the scrape makes: quiet when there is nothing to work

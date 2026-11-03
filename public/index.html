@@ -877,9 +877,12 @@
                  source, that DailyMattr's voice agent answers questions from. -->
             <div class="voice-summary-head">
               <h3 class="acc-subtitle">Voice Summary</h3>
-              <button type="button" id="voice-summary-generate" class="btn-ghost voice-summary-btn">Generate from source</button>
+              <div class="voice-summary-actions">
+                <button type="button" id="voice-summary-play" class="btn-ghost voice-summary-btn" aria-pressed="false">▶ Play voice</button>
+                <button type="button" id="voice-summary-generate" class="btn-ghost voice-summary-btn" title="Write the summary from the scraped article">↻ Generate</button>
+              </div>
             </div>
-            <textarea id="voice-summary-edit" rows="4" maxlength="600" placeholder="A quick glimpse of the story, under 60 words..."></textarea>
+            <textarea id="voice-summary-edit" rows="6" maxlength="1200" placeholder="A quick spoken glimpse of the story, under 60 words..."></textarea>
             <small class="helper-text" id="voice-summary-status">For the DailyMattr voice agent. Not shown on any slide — written from the scraped article.</small>
 
             <!-- Only reachable while a Story page is selected. Its copy belongs
