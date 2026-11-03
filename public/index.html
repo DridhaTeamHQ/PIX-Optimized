@@ -81,6 +81,15 @@
       <path d="M3 8.6l3.2 3.2L13 5" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round"/>
     </symbol>
+    <symbol id="i-eye" viewBox="0 0 16 16">
+      <path d="M1.2 8S3.8 3.2 8 3.2 14.8 8 14.8 8 12.2 12.8 8 12.8 1.2 8 1.2 8z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+      <circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.5" fill="none"/>
+    </symbol>
+    <symbol id="i-eye-off" viewBox="0 0 16 16">
+      <path d="M1.2 8S3.8 3.2 8 3.2 14.8 8 14.8 8 12.2 12.8 8 12.8 1.2 8 1.2 8z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+      <circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.5" fill="none"/>
+      <path d="M2.5 13.5l11-11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
     <symbol id="i-moon" viewBox="0 0 16 16">
       <path d="M13.5 9.8A6 6 0 0 1 6.2 2.5a6 6 0 1 0 7.3 7.3z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
     </symbol>
@@ -217,8 +226,14 @@
         </label>
         <label class="login-field">
           <span>Password</span>
-          <input type="password" id="login-password" name="password"
-                 autocomplete="current-password" required />
+          <div class="password-wrap">
+            <input type="password" id="login-password" name="password"
+                   autocomplete="current-password" required />
+            <button type="button" class="password-toggle" id="login-password-toggle"
+                    aria-label="Show password" aria-pressed="false" title="Show password">
+              <svg width="18" height="18"><use href="#i-eye"/></svg>
+            </button>
+          </div>
         </label>
         <button type="submit" class="btn-primary" id="login-submit">Sign in</button>
       </form>
@@ -857,6 +872,15 @@
             <h3 class="acc-subtitle">Text Paragraph</h3>
             <textarea id="detail-edit" rows="12" placeholder="Edit the paragraph shown in Text preview..."></textarea>
             <small class="helper-text">This copy appears in the Text preview.</small>
+
+            <!-- Not drawn on any slide. The complete story, written from the
+                 source, that DailyMattr's voice agent answers questions from. -->
+            <div class="voice-summary-head">
+              <h3 class="acc-subtitle">Voice Summary</h3>
+              <button type="button" id="voice-summary-generate" class="btn-ghost voice-summary-btn">Generate from source</button>
+            </div>
+            <textarea id="voice-summary-edit" rows="4" maxlength="600" placeholder="A quick glimpse of the story, under 60 words..."></textarea>
+            <small class="helper-text" id="voice-summary-status">For the DailyMattr voice agent. Not shown on any slide — written from the scraped article.</small>
 
             <!-- Only reachable while a Story page is selected. Its copy belongs
                  to that page, not to the post, so editing it here writes to

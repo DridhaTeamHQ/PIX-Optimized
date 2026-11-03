@@ -154,6 +154,10 @@ const editPanel = document.getElementById("edit-panel");
 const imagePanel = document.getElementById("image-panel");
 const headlineEdit = document.getElementById("headline-edit");
 const detailEdit = document.getElementById("detail-edit");
+const voiceSummaryEdit = document.getElementById("voice-summary-edit");
+const voiceSummaryBtn = document.getElementById("voice-summary-generate");
+const voiceSummaryStatus = document.getElementById("voice-summary-status");
+let voiceSummaryNonce = 0;   // see generateVoiceSummary
 const imgOffsetX = document.getElementById("img-offset-x");
 const imgOffsetY = document.getElementById("img-offset-y");
 const storyOpacityControl = document.getElementById("story-opacity-control");
@@ -261,6 +265,7 @@ const state = {
   categoryId: "",
   stateId: "",
   articleText: "",             // full scraped body text — what actually grounds the AI writer
+  voiceSummary: "",            // complete spoken summary for the DailyMattr voice agent
   mainImage: null,
   ready: false,
   imageOffset: { x: 0, y: 0 },
@@ -1099,6 +1104,23 @@ function setAuthState(status, message) {
   }
 }
 
+/* Eye button on the password field. Always reset to hidden once an attempt
+   ends, so the next person at this screen never finds it showing. */
+const loginPasswordToggle = document.getElementById("login-password-toggle");
+function setPasswordVisible(visible) {
+  if (!loginPassword || !loginPasswordToggle) return;
+  loginPassword.type = visible ? "text" : "password";
+  const label = visible ? "Hide password" : "Show password";
+  loginPasswordToggle.setAttribute("aria-pressed", String(visible));
+  loginPasswordToggle.setAttribute("aria-label", label);
+  loginPasswordToggle.title = label;
+  loginPasswordToggle.querySelector("use")?.setAttribute("href", visible ? "#i-eye-off" : "#i-eye");
+}
+loginPasswordToggle?.addEventListener("click", () => {
+  setPasswordVisible(loginPassword.type === "password");
+  loginPassword.focus();
+});
+
 if (loginForm) {
   loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1130,6 +1152,7 @@ if (loginForm) {
     } catch {
       if (authMessage) authMessage.textContent = "Could not reach the server.";
     } finally {
+      setPasswordVisible(false);
       loginSubmit.disabled = false;
       loginSubmit.textContent = "Sign in";
     }
@@ -2011,6 +2034,13 @@ if (detailEdit) {
   });
   detailEdit.addEventListener("keydown", handleDetailBulletEnter);
 }
+
+voiceSummaryEdit?.addEventListener("input", () => {
+  state.voiceSummary = voiceSummaryEdit.value;
+  voiceSummaryNonce++;   // a hand edit wins over a summary still in flight
+  setVoiceSummaryStatus(voiceSummaryCountLabel());
+});
+voiceSummaryBtn?.addEventListener("click", () => generateVoiceSummary());
 
 /* Story copy writes to live state; syncActivePageContent folds it back onto
    the page on the next read, which is the same route every page-scoped field
@@ -3096,6 +3126,9 @@ async function runScrape() {
     // the four points and the tweet, and pushes them into the slides. The
     // scrape is the moment we have the freshest source text, so this is
     // where grounding is best.
+    // The voice summary needs the same fresh source text; it runs alongside
+    // the article writer rather than after it.
+    generateVoiceSummary({ auto: true });
     generateArticle({ applyToSlides: true }).then((data) => {
       setStatus(
         data ? "Done! Poster and article ready — edit below, then download."
@@ -11012,6 +11045,69 @@ function setArticleStatus(msg, kind) {
   articleStatus.textContent = msg || "";
 }
 
+/* ── Voice summary ──
+   The complete story for DailyMattr's voice agent, written from the scraped
+   source (see lib/voice-summary.js). It is post-level and never drawn on a
+   slide. `voiceSummaryNonce` is bumped by a new post, a reopen and a hand
+   edit, so a summary that lands late never overwrites any of them. */
+function setVoiceSummary(text) {
+  state.voiceSummary = text || "";
+  voiceSummaryNonce++;
+  if (voiceSummaryEdit) voiceSummaryEdit.value = state.voiceSummary;
+  setVoiceSummaryStatus(state.voiceSummary ? voiceSummaryCountLabel() : "");
+}
+
+function voiceSummaryCountLabel() {
+  const words = (state.voiceSummary || "").split(/\s+/).filter(Boolean).length;
+  return words ? `${words} words · for the DailyMattr voice agent, not shown on any slide.` : "";
+}
+
+function setVoiceSummaryStatus(msg, kind = "") {
+  if (!voiceSummaryStatus) return;
+  voiceSummaryStatus.className = "helper-text" + (kind ? ` ${kind}` : "");
+  voiceSummaryStatus.textContent = msg ||
+    "For the DailyMattr voice agent. Not shown on any slide — written from the scraped article.";
+}
+
+/* `auto` is the call the scrape makes: quiet when there is nothing to work
+   from, and it never replaces a summary the writer already has. */
+async function generateVoiceSummary({ auto = false } = {}) {
+  const articleText = (state.articleText || "").trim();
+  if (!articleText && !state.sourceUrl) {
+    if (!auto) setVoiceSummaryStatus("No source yet — scrape an article link first.", "error");
+    return null;
+  }
+  if (auto && (state.voiceSummary || "").trim()) return null;
+
+  const nonce = ++voiceSummaryNonce;
+  if (voiceSummaryBtn) voiceSummaryBtn.disabled = true;
+  setVoiceSummaryStatus("Writing the voice summary from the source…");
+  try {
+    const resp = await fetch("/api/generate-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        headline: state.scrapedTitle || state.headline || "",
+        sourceUrl: state.sourceUrl || "",
+        articleText,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    if (nonce !== voiceSummaryNonce) return null;   // the post moved on
+
+    setVoiceSummary(data.summary || "");
+    const flags = Array.isArray(data.flags) && data.flags.length ? ` Check: ${data.flags.join(" ")}` : "";
+    setVoiceSummaryStatus(`${voiceSummaryCountLabel()}${flags}`, flags ? "error" : "success");
+    return data;
+  } catch (err) {
+    if (nonce === voiceSummaryNonce) setVoiceSummaryStatus(`Voice summary failed — ${err.message}`, "error");
+    return null;
+  } finally {
+    if (voiceSummaryBtn) voiceSummaryBtn.disabled = false;
+  }
+}
+
 /**
  * Generate the article package and fill the slides with it.
  *
@@ -14356,6 +14452,11 @@ async function publishToDailyMattr({ skipConfirm = false } = {}) {
     if (keywords) form.append("keywords", keywords);
     if (stateId) form.append("state_id", stateId);
     if (state.sourceUrl) form.append("source_url", state.sourceUrl);
+    /* Stored on OUR row at publish, never forwarded: DailyMattr has no field
+       for it yet and will fetch it from us once their voice agent exists.
+       Sent here because a post that was already saved skips the save above,
+       so an edit made since would otherwise never reach the database. */
+    if ((state.voiceSummary || "").trim()) form.append("voice_summary", state.voiceSummary.trim());
     // Lets the server mark this post approved once DailyMattr accepts it —
     // sending a story live IS the approval. Absent when the poster was never
     // saved, in which case there is no library row to mark.
@@ -15225,6 +15326,7 @@ function startNewPix() {
   state.keywords = "";
   syncDateAndKeywordInputs();
   state.articleText = "";
+  setVoiceSummary("");
   state.scrapedTitle = "";
   state.imageQuery = "";
   state.sourceImageUrl = null;
@@ -15469,6 +15571,7 @@ function collectPixPayload(submitting, view = basePageView()) {
     // What the poster shows
     headline: view.headline || null,
     detailBody: view.detailText || null,
+    voiceSummary: view.voiceSummary || null,
     mainImageUrl: image.url,
     mainImageSource: image.source,
     aspectRatio: view.aspectRatio,
@@ -15945,6 +16048,7 @@ async function loadPixIntoEditor(post) {
     state.headline = post.headline || post.ai_headline || post.scraped_title || "";
     state.detailText = post.detail_body || post.detail_text || "";
     state.articleText = post.article_text || "";
+    setVoiceSummary(post.voice_summary || "");
     state.sourceUrl = post.source_url || "";
     syncSourceUrlInput();
     state.categoryId = post.category_id ? String(post.category_id) : "";

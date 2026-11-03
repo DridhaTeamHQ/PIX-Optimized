@@ -3948,3 +3948,31 @@ a.imageai-shot:hover img {
   background: rgba(0, 0, 0, 0.12);
   color: #2a2828;
 }
+
+/* ═══ Voice summary ═════════════════════════════════════════════════════════
+   Heading and its generate button share a row, so the button reads as acting
+   on this box rather than on the paragraph above. */
+.voice-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.voice-summary-head .acc-subtitle {
+  margin-top: 0;
+}
+
+.voice-summary-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+@media (pointer: fine) {
+  .voice-summary-btn { min-height: 32px; }
+}
+
+#voice-summary-status.error { color: var(--danger, #e5484d); }
+#voice-summary-status.success { color: var(--success, #3fb950); }

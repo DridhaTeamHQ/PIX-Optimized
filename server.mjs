@@ -16,7 +16,7 @@ import {
   configureDb, isConfigured as dbConfigured, ping as dbPing,
   getPix, setApproval,
   claimPublish, recordPublishedId, recordPublishAttempt, releasePublishClaim, readQuery,
-  recordWebPages, getPixAnalytics,
+  recordWebPages, recordVoiceSummary, getPixAnalytics,
 } from "./lib/db.js";
 import {
   SESSION_COOKIE, parseCookies, sessionCookie, clearedSessionCookie,
@@ -40,6 +40,7 @@ import { planHdUpscale, decodeRgb, cropForModel, hdDetailTransfer, hdFinish } fr
 import { createFaceDetector } from "./lib/face-detect.js";
 import { lockFaces } from "./lib/face-lock.js";
 import { copyCardsToWeb } from "./lib/web-cards.js";
+import { generateVoiceSummary } from "./lib/voice-summary.js";
 import {
   fetchDailyMattrMeta, getDailyMattrConfig, publishDailyMattrBuzzContent,
 } from "./lib/dailymattr.js";
@@ -499,6 +500,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/api/generate-article") {
     await handleGenerateArticle(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/generate-summary") {
+    await handleGenerateSummary(req, res);
     return;
   }
 
@@ -2501,6 +2507,17 @@ async function runDailyMattrPublish(req, res) {
     }
   }
 
+  /* The voice summary stays here: DailyMattr fetches it from us once their
+     voice agent exists. Best-effort for the same reason as the card copy —
+     the story is already live. */
+  if (payload.pixId && payload.voiceSummary) {
+    try {
+      await recordVoiceSummary(payload.pixId, payload.voiceSummary);
+    } catch (err) {
+      console.error(`✗ PUBLISHED but the voice summary was not stored (${payload.pixId}): ${err.message}`);
+    }
+  }
+
   /* Publishing IS approval — QA would otherwise have to remember a second
      click for a decision they have already made by sending the story live.
 
@@ -2638,6 +2655,8 @@ function readDailyMattrPublish(req) {
         keywords: fields.keywords || "",
         stateId: fields.state_id || "",
         sourceUrl: fields.source_url || "",
+        // Kept on our row only — publishDailyMattrBuzzContent does not read it.
+        voiceSummary: String(fields.voice_summary || "").trim().slice(0, 1200),
         // Which library row this poster came from, so publishing can approve
         // it. Empty when QA built the poster without ever saving it.
         pixId: PIX_UUID_RE.test(String(fields.pix_id || "")) ? String(fields.pix_id) : "",
@@ -4723,6 +4742,49 @@ function clampBullet(s) {
   while (TRAILING_STOPWORDS.test(cut)) cut = cut.replace(TRAILING_STOPWORDS, "").trim();
   cut = cut.replace(/[\s,;:.\-–—]+$/, "").trim();
   return cut ? cut + "." : cut;
+}
+
+/* ── Voice summary for the DailyMattr voice agent ──
+   See lib/voice-summary.js. The client sends the article text it already
+   scraped; only when it has none is the source re-fetched here. */
+async function handleGenerateSummary(req, res) {
+  try {
+    const body = await readJson(req);
+    const headline = String(body?.headline || "").trim();
+    const sourceUrl = String(body?.sourceUrl || "").trim();
+    let articleText = String(body?.articleText || "").trim();
+
+    if (!articleText && sourceUrl) {
+      try {
+        const { html } = await fetchPublicHtml(sourceUrl, { userAgent: USER_AGENT });
+        const articleMatch = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+        const scope = articleMatch?.[1] || html;
+        articleText = [...scope.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+          .map((m) => cleanupText(stripTags(m[1] || "")))
+          .filter((t) => t.length >= 50)
+          .filter((t) => !/^(sign up|read more|copyright|follow live|watch:|also read)/i.test(t))
+          .join("\n");
+      } catch { /* the generator answers "not enough source text" below */ }
+    }
+
+    const result = await generateVoiceSummary({
+      headline,
+      articleText,
+      apiKey: openaiApiKey,
+      fetchImpl: (url, options) => fetchWithDeadline(url, options, OPENAI_TEXT_TIMEOUT_MS, "voice summary"),
+    });
+    if (result.usage) meterText(result.usage);
+    if (result.openaiStatus) {
+      console.error(`✗ OpenAI ${result.openaiStatus} (voice summary):`, String(result.openaiBody || "").slice(0, 300));
+      sendJson(res, 502, { error: openaiErrorMessage(result.openaiStatus, result.openaiBody) });
+      return;
+    }
+    if (result.status === 200) console.log(`✓ voice summary: ${result.body.words} words from ${result.body.sourceChars} chars`);
+    sendJson(res, result.status, result.body);
+  } catch (err) {
+    console.error("✗ generate-summary error:", err);
+    sendJson(res, 500, { error: err.message || "Summary generation failed." });
+  }
 }
 
 async function handleGenerateArticle(req, res) {
