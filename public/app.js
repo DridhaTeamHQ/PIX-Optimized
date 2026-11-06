@@ -9511,12 +9511,10 @@ function renderWriterRoster() {
   if (!analyticsRosterList) return;
 
   const mode = ROSTER_MODES[rosterMode] || ROSTER_MODES.writers;
-  /* Ten, sliced here rather than in SQL. The query behind these rows now
-     returns everybody, because the Writers screen merges the same payload
-     into a roster keyed by account and a top-ten cut left everyone below
-     eleventh place reading "no posts yet". This panel is still a
-     leaderboard, so it still shows ten. */
-  const rows = (rosterMode === "qa" ? qaRoster : writerRoster).slice(0, 10);
+  /* Everyone the query returned, not a top ten. A ten-row cut hid every
+     writer below tenth place, so the Team tab read as if they did not
+     exist. The server already bounds the payload (limit 200). */
+  const rows = rosterMode === "qa" ? qaRoster : writerRoster;
 
   if (analyticsRosterTitle) analyticsRosterTitle.textContent = mode.title;
   if (analyticsRosterDesc) {
