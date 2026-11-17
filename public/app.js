@@ -329,7 +329,7 @@ const state = {
   videoCaption: "",         // burned into the clip, bottom-anchored
   videoCaptionSize: 48,     // design px at 920×1700; scaled per ratio — poster headline size
   secondLogoImage: null,
-  tag: "none",       // "none" | "daily-wrap" | "weekly-wrap" | "trending" | "breaking" | "swipe-video" (+ "-text" variants)
+  tag: "none",       // "none" | "daily-wrap" | "weekly-wrap" | "trending" | "breaking" | "swipe-video" (+ "-text" variants) | "fact-check"
   tagImages: {},     // { trending: Image, breaking: Image } — SVG-backed tags only
   isDownloading: false,
   forceTextExport: false,
@@ -651,7 +651,10 @@ const DRAWN_TAGS = {
   "daily-wrap":       { label: "DAILY WRAP",      bg: "#EB6329", icon: "clock", chip: true, flush: true },
   "weekly-wrap":      { label: "WEEKLY WRAP",     bg: "#7C3AED", icon: "clock", chip: true, flush: true },
   "swipe-video":      { label: "Swipe for Video", bg: "#3979FF", icon: "play" },
-  "swipe-video-text": { label: "Swipe for Video", bg: "#3979FF", icon: false }
+  "swipe-video-text": { label: "Swipe for Video", bg: "#3979FF", icon: false },
+  // Fact-check is the Trending bar in red. Written exactly as it reads —
+  // hyphenated, not capitalised — so the badge matches the house spelling.
+  "fact-check":       { label: "Fact-check",      bg: "#E02424", icon: false }
 };
 
 // Wait for both Poppins AND Roboto Serif fonts to load before first render
