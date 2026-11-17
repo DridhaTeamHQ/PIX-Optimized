@@ -652,9 +652,9 @@ const DRAWN_TAGS = {
   "weekly-wrap":      { label: "WEEKLY WRAP",     bg: "#7C3AED", icon: "clock", chip: true, flush: true },
   "swipe-video":      { label: "Swipe for Video", bg: "#3979FF", icon: "play" },
   "swipe-video-text": { label: "Swipe for Video", bg: "#3979FF", icon: false },
-  // Fact-check is the Trending bar in red. Written exactly as it reads —
-  // hyphenated, not capitalised — so the badge matches the house spelling.
-  "fact-check":       { label: "Fact-check",      bg: "#E02424", icon: false }
+  // Fact-check is the Trending bar in red. Hyphenated and in caps, to sit
+  // with the TRENDING and BREAKING artwork rather than the mixed-case Swipe.
+  "fact-check":       { label: "FACT-CHECK",      bg: "#E02424", icon: false }
 };
 
 // Wait for both Poppins AND Roboto Serif fonts to load before first render
