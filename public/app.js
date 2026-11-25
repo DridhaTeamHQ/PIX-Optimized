@@ -14495,10 +14495,10 @@ async function publishToDailyMattr({ skipConfirm = false } = {}) {
     if (keywords) form.append("keywords", keywords);
     if (stateId) form.append("state_id", stateId);
     if (state.sourceUrl) form.append("source_url", state.sourceUrl);
-    /* Stored on OUR row at publish, never forwarded: DailyMattr has no field
-       for it yet and will fetch it from us once their voice agent exists.
-       Sent here because a post that was already saved skips the save above,
-       so an edit made since would otherwise never reach the database. */
+    /* Forwarded to DailyMattr as summary_text for their voice agent, and
+       stored on our row. Sent here because a post that was already saved
+       skips the save above, so an edit made since would otherwise never
+       reach the database. */
     if ((state.voiceSummary || "").trim()) form.append("voice_summary", state.voiceSummary.trim());
     // Lets the server mark this post approved once DailyMattr accepts it —
     // sending a story live IS the approval. Absent when the poster was never
