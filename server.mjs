@@ -2358,10 +2358,7 @@ async function runDailyMattrPublish(req, res) {
      classified rather than lumped in with everything else in the handler. */
   let result;
   try {
-    result = await publishDailyMattrBuzzContent(
-      { ...payload, summaryText: payload.voiceSummary },
-      dailyMattrConfig(),
-    );
+    result = await publishDailyMattrBuzzContent(payload, dailyMattrConfig());
   } catch (err) {
     const neverSent = publishDefinitelyNotSent(err);
     console.warn(
@@ -2510,9 +2507,9 @@ async function runDailyMattrPublish(req, res) {
     }
   }
 
-  /* The voice summary goes to DailyMattr as summary_text and is also kept on
-     our row. Best-effort for the same reason as the card copy — the story is
-     already live. */
+  /* The voice summary stays here: DailyMattr fetches it from us once their
+     voice agent exists. Best-effort for the same reason as the card copy —
+     the story is already live. */
   if (payload.pixId && payload.voiceSummary) {
     try {
       await recordVoiceSummary(payload.pixId, payload.voiceSummary);
@@ -2658,7 +2655,7 @@ function readDailyMattrPublish(req) {
         keywords: fields.keywords || "",
         stateId: fields.state_id || "",
         sourceUrl: fields.source_url || "",
-        // Stored on our row AND sent to DailyMattr as summary_text.
+        // Kept on our row only — publishDailyMattrBuzzContent does not read it.
         voiceSummary: String(fields.voice_summary || "").trim().slice(0, 1200),
         // Which library row this poster came from, so publishing can approve
         // it. Empty when QA built the poster without ever saving it.
